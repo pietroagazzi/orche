@@ -1,0 +1,131 @@
+# Whaler
+
+A simple, lightweight Python orchestrator for Docker Compose stacks.
+
+## Installation
+
+```bash
+pip install -e .
+```
+
+## CLI Reference
+
+The `whaler` command executes your `whaler.py` file with the specified command and services.
+
+```bash
+whaler [command] [services...]
+```
+
+### Commands
+
+- `whaler up [services]` - Start services (executes whaler.py with 'up' command)
+- `whaler build [services]` - Build services (executes whaler.py with 'build' command)
+- `whaler down [services]` - Stop services (executes whaler.py with 'down' command)
+
+### Options
+
+- `-f, --file FILE` - Path to whaler file (default: whaler.py)
+- `-v, --version` - Show version
+- `-h, --help` - Show help
+
+### Examples
+
+```bash
+# Execute whaler.py with up command
+whaler up
+
+# Build specific services
+whaler build api web
+
+# Start specific services
+whaler up postgres redis
+
+# Use custom whaler file
+whaler -f custom-whaler.py up
+```
+
+## Examples
+
+### Basic Usage
+
+```python
+from whaler import Stack
+
+stack = Stack("docker-compose.yml")
+stack.build().up()
+```
+
+### With Project Name
+
+```python
+from whaler import Stack
+
+stack = Stack(
+    compose_file="docker-compose.yml",
+    project_name="myapp",
+    project_path="/path/to/project"
+)
+
+stack.build().up(wait=True)
+```
+
+### Specific Services
+
+```python
+from whaler import Stack
+
+stack = Stack("docker-compose.yml")
+
+# Build specific services
+stack.build(["api", "web"])
+
+# Start specific services
+stack.up(["postgres", "redis"])
+```
+
+### Interactive Script
+
+```python
+from whaler import Stack, tui
+
+project_name = tui.input("Project name: ", default="myproject")
+environment = tui.input("Environment (dev/prod): ", default="dev")
+
+stack = Stack(
+    compose_file=f"docker-compose.{environment}.yml",
+    project_name=project_name
+)
+
+stack.build().up()
+```
+
+## Requirements
+
+- Python >= 3.14
+- Docker and Docker Compose installed on the system
+
+## Development
+
+Install development dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+Type checking:
+
+```bash
+mypy whaler
+```
+
+Linting:
+
+```bash
+ruff check whaler
+```
