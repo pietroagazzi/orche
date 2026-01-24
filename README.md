@@ -1,5 +1,7 @@
 # Whaler
 
+[![CI](https://github.com/pietroagazzi/whaler/actions/workflows/ci.yml/badge.svg)](https://github.com/pietroagazzi/whaler/actions/workflows/ci.yml)
+
 A simple, lightweight Python orchestrator for Docker Compose stacks.
 
 ## Installation

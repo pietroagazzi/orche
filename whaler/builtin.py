@@ -42,11 +42,10 @@ def git_clone(repo_url: str, dest: str | Path, branch: str | None = None) -> Non
 
     tui.info(f"Cloning {repo_url} into {dest}...")
     try:
-        kwargs = {}
         if branch:
-            kwargs["branch"] = branch
-
-        git.Repo.clone_from(repo_url, dest_path, **kwargs)
+            git.Repo.clone_from(repo_url, dest_path, branch=branch)
+        else:
+            git.Repo.clone_from(repo_url, dest_path)
         tui.success(f"Repository cloned to {dest}")
     except git.exc.GitCommandError as e:
         tui.error(f"Failed to clone repository: {e.stderr}")

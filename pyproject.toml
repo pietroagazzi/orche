@@ -1,5 +1,5 @@
 [project]
-name = "whaler"
+name = "orche"
 version = "0.1.0"
 description = "A Python orchestrator for Docker Compose stacks"
 authors = [
@@ -12,9 +12,7 @@ dependencies = [
     "rich>=13.0.0",
     "python-dotenv>=1.0.0",
     "PyYAML>=6.0",
-    "types-pyyaml (>=6.0.12.20250915,<7.0.0.0)",
     "GitPython>=3.1.0",
-    "types-pygments[dev] (>=2.19.0.20251121,<3.0.0.0)",
 ]
 
 [project.scripts]
@@ -29,6 +27,8 @@ dev = [
     "mypy>=1.8.0",
     "ruff>=0.2.0",
     "types-PyYAML>=6.0",
+    "types-pygments>=2.19.0",
+    "pre-commit>=4.0.0",
 ]
 
 [tool.poetry]
