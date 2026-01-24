@@ -6,6 +6,7 @@ from typing import cast
 
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
+from rich.status import Status
 
 
 class TUI:
@@ -46,6 +47,18 @@ class TUI:
             Rich Console for stderr
         """
         return self._error_console
+
+    def status(self, message: str, spinner: str = "dots") -> Status:
+        """Create a status spinner context manager.
+
+        Args:
+            message: Message to display next to spinner
+            spinner: Name of spinner animation to use
+
+        Returns:
+            Rich Status context manager
+        """
+        return self._console.status(message, spinner=spinner)
 
     def input(self, prompt: str = "", default: str | None = None) -> str:
         """Interactive input function with optional default.

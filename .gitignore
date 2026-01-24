@@ -62,3 +62,4 @@ docker-compose.override.yml
 
 # Project specific
 .claude/
+.whaler/

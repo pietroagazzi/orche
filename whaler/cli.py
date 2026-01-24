@@ -51,8 +51,7 @@ def execute_whaler_file(
     load_dotenv()
 
     # Setup logging based on verbosity
-    log_level = "DEBUG" if verbose else "INFO"
-    setup_logger(level=log_level)  # type: ignore[arg-type]
+    setup_logger(verbose=verbose)
 
     # Add current working directory to sys.path to allow local imports
     if os.getcwd() not in sys.path:
