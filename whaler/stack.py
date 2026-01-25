@@ -61,7 +61,7 @@ class Stack:
         self,
         name: str | None = None,
         path: str | Path = ".",
-        compose_file: str | Path = "docker-compose.yml",
+        compose_files: list[str] | list[Path] | None = None,
         load_env: bool = True,
     ):
         """Initialize a Docker Compose stack.
@@ -69,14 +69,30 @@ class Stack:
         Args:
             name: Optional project name (defaults to directory name)
             path: Project root path (defaults to current directory)
-            compose_file: Path to docker-compose.yml file (relative to path)
+            compose_files: List of docker-compose file paths (relative to cwd or abs).
+                          Files are merged in order (later files override earlier ones).
+                          Defaults to ["docker-compose.yml"] if None.
+                          Cannot be an empty list.
             load_env: Whether to load .env file from project path
 
         Raises:
-            FileNotFoundError: If compose_file does not exist
+            ValueError: If compose_files is an empty list
+            FileNotFoundError: If any compose file does not exist
         """
-        self.project_path = Path(path).resolve()
-        self.compose_file = self.project_path / compose_file
+        if compose_files is None:
+            compose_files = ["docker-compose.yml"]
+        elif not compose_files:  # Empty list check
+            raise ValueError(
+                "compose_files cannot be an empty list. "
+                "Either omit the parameter to use the default ['docker-compose.yml'], "
+                "or provide at least one compose file path."
+            )
+
+        self.project_path: Path = Path(path).resolve()
+        self.compose_files = [
+            (cf_path if cf_path.is_absolute() else (Path.cwd() / cf_path)).resolve()
+            for cf_path in (Path(cf) for cf in compose_files)
+        ]
         self.project_name = name
         self.logger = get_logger()
 
@@ -87,15 +103,18 @@ class Stack:
                 load_dotenv(env_file)
                 self.logger.debug(f"Loaded environment from {env_file}")
 
-        if not self.compose_file.exists():
+        # Validate all compose files exist
+        missing_files = [cf for cf in self.compose_files if not cf.exists()]
+        if missing_files:
+            files_str = "\n  ".join(str(f) for f in missing_files)
             raise FileNotFoundError(
-                f"Docker Compose file not found: {self.compose_file}\n"
-                f"Please ensure the file exists or provide the correct path."
+                f"Docker Compose file(s) not found:\n  {files_str}\n"
+                f"Please ensure the file(s) exist or provide the correct path(s)."
             )
 
         # Initialize Docker wrapper
         self._docker = DockerComposeWrapper(
-            compose_file=self.compose_file,
+            compose_files=self.compose_files,
             project_name=self.project_name,
             project_path=self.project_path,
         )
@@ -115,6 +134,29 @@ class Stack:
         if not self._active_services:
             return True
         return service in self._active_services
+
+    def on(self, services: list[str] | None = None) -> bool:
+        """Check if any of the specified services are active in the
+        current execution context.
+
+        Uses OR logic: returns True if at least one of the specified services is active.
+
+        Args:
+            services: List of service names to check. If None or empty, returns True.
+
+        Returns:
+            True if:
+            - No services parameter provided (services=None or services=[])
+            - Any of the specified services are active (checked via active())
+            False otherwise.
+        """
+        # No services specified - no filter, always True
+        if not services:
+            return True
+
+        # Check if any service in the list is active (OR logic)
+        # The "no CLI services => all active" rule is delegated to active()
+        return any(self.active(s) for s in services)
 
     def build(self, services: list[str] | None = None) -> "Stack":
         """Build services in the stack.

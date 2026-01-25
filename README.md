@@ -63,7 +63,7 @@ stack.build().up()
 from whaler import Stack
 
 stack = Stack(
-    compose_file="docker-compose.yml",
+    compose_files=["docker-compose.yml"],
     project_name="myapp",
     project_path="/path/to/project"
 )
@@ -94,7 +94,7 @@ project_name = tui.input("Project name: ", default="myproject")
 environment = tui.input("Environment (dev/prod): ", default="dev")
 
 stack = Stack(
-    compose_file=f"docker-compose.{environment}.yml",
+    compose_files=[f"docker-compose.{environment}.yml"],
     project_name=project_name
 )
 

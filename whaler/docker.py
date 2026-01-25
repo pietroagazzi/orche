@@ -1,6 +1,7 @@
 """Docker abstraction layer for docker-compose operations."""
 
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 
 from python_on_whales import DockerClient, DockerException
@@ -13,21 +14,30 @@ class DockerComposeWrapper:
 
     def __init__(
         self,
-        compose_file: Path,
+        compose_files: Sequence[str | Path],
         project_name: str | None = None,
         project_path: Path | None = None,
     ):
         """Initialize Docker Compose wrapper.
 
         Args:
-            compose_file: Path to docker-compose.yml file
+            compose_files: Sequence of docker-compose file paths (str or Path).
+                          Files are merged in order. Cannot be empty.
             project_name: Optional project name (defaults to directory name)
-            project_path: Optional project path (defaults to compose_file directory)
+            project_path: Optional project path
+
+        Raises:
+            ValueError: If compose_files is empty
         """
-        self.compose_file = Path(compose_file)
+        if not compose_files:
+            raise ValueError(
+                "compose_files cannot be empty. At least one compose file is required."
+            )
+
+        self.compose_files = [Path(cf) for cf in compose_files]
         self.project_name = project_name
         self.project_path = (
-            Path(project_path) if project_path else self.compose_file.parent
+            Path(project_path) if project_path else self.compose_files[0].parent
         )
 
         if not shutil.which("docker"):
@@ -37,7 +47,7 @@ class DockerComposeWrapper:
             )
 
         self.compose = DockerClient(
-            compose_files=[str(self.compose_file)],
+            compose_files=[str(cf) for cf in self.compose_files],
             compose_project_name=project_name,
             compose_project_directory=str(self.project_path),
         ).compose
@@ -77,7 +87,6 @@ class DockerComposeWrapper:
         try:
             self.compose.up(
                 services=services,
-                quiet=True,
                 detach=detach,
                 wait=wait,
             )
