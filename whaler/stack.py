@@ -245,7 +245,7 @@ class Stack:
         """Parse CLI arguments and execute the requested command."""
         if len(sys.argv) < 2:
             self.logger.info(f"Stack: {self.project_name or 'Whaler'}")
-            self.logger.info("\nUsage: python whaler.py <command> [services...]")
+            self.logger.info("\nUsage: python whalefile.py <command> [services...]")
             self.logger.info("\nAvailable commands:")
             for cmd in self.commands._commands:
                 self.logger.info(f"  - {cmd}")

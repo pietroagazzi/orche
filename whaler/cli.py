@@ -16,19 +16,19 @@ CommandName = Literal["up", "build", "down", "stop"]
 
 
 def find_whaler_file() -> Path:
-    """Find whaler.py in current directory.
+    """Find whalefile.py in current directory.
 
     Returns:
-        Path to whaler.py file
+        Path to whalefile.py file
 
     Raises:
-        FileNotFoundError: If whaler.py is not found
+        FileNotFoundError: If whalefile.py is not found
     """
-    whaler_file = Path.cwd() / "whaler.py"
+    whaler_file = Path.cwd() / "whalefile.py"
     if not whaler_file.exists():
         raise FileNotFoundError(
-            f"whaler.py not found in {Path.cwd()}\n"
-            "Make sure you're in a directory with a whaler.py file."
+            f"whalefile.py not found in {Path.cwd()}\n"
+            "Make sure you're in a directory with a whalefile.py file."
         )
     return whaler_file
 
@@ -39,10 +39,10 @@ def execute_whaler_file(
     services: list[str],
     verbose: bool = False,
 ) -> None:
-    """Execute whaler.py file with given command.
+    """Execute whalefile.py file with given command.
 
     Args:
-        whaler_file: Path to whaler.py file
+        whaler_file: Path to whalefile.py file
         command: Command to execute (up, build, down, stop)
         services: List of service names
         verbose: Enable verbose/debug logging
@@ -57,13 +57,13 @@ def execute_whaler_file(
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
 
-    # Prepare sys.argv for the whaler.py script
+    # Prepare sys.argv for the whalefile.py script
     # This allows the script to access command and services via sys.argv
     original_argv = sys.argv.copy()
-    sys.argv = ["whaler.py", command] + services
+    sys.argv = ["whalefile.py", command] + services
 
     try:
-        # Read and execute the whaler.py file
+        # Read and execute the whalefile.py file
         with open(whaler_file, encoding="utf-8") as f:
             code = compile(f.read(), str(whaler_file), "exec")
             # Execute in global namespace so imports work correctly
@@ -80,14 +80,14 @@ def main() -> NoReturn:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  whaler up              Execute whaler.py with 'up' command
-  whaler up api web      Execute whaler.py with 'up' command for specific services
-  whaler build           Execute whaler.py with 'build' command
-  whaler down            Execute whaler.py with 'down' command
-  whaler stop            Execute whaler.py with 'stop' command
+  whaler up              Execute whalefile.py with 'up' command
+  whaler up api web      Execute whalefile.py with 'up' command for specific services
+  whaler build           Execute whalefile.py with 'build' command
+  whaler down            Execute whalefile.py with 'down' command
+  whaler stop            Execute whalefile.py with 'stop' command
   whaler -v up           Execute with verbose/debug logging
 
-The whaler.py file in the current directory will be executed with the
+The whalefile.py file in the current directory will be executed with the
 specified command and services available via sys.argv.
         """,
     )
@@ -108,8 +108,8 @@ specified command and services available via sys.argv.
     parser.add_argument(
         "-f",
         "--file",
-        default="whaler.py",
-        help="Path to whaler file (default: whaler.py)",
+        default="whalefile.py",
+        help="Path to whaler file (default: whalefile.py)",
     )
 
     parser.add_argument(
@@ -129,9 +129,9 @@ specified command and services available via sys.argv.
 
     error_console = Console(stderr=True)
 
-    # Find whaler.py file
+    # Find whalefile.py file
     try:
-        if args.file == "whaler.py":
+        if args.file == "whalefile.py":
             whaler_file = find_whaler_file()
         else:
             whaler_file = Path(args.file)
@@ -142,7 +142,7 @@ specified command and services available via sys.argv.
         error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    # Execute whaler.py with command
+    # Execute whalefile.py with command
     try:
         execute_whaler_file(
             whaler_file, args.command, args.services, verbose=args.verbose
@@ -152,7 +152,7 @@ specified command and services available via sys.argv.
         error_console.print("\n[yellow]Interrupted by user[/yellow]")
         sys.exit(130)
     except Exception as e:
-        error_console.print(f"[red]Error executing whaler.py: {e}[/red]")
+        error_console.print(f"[red]Error executing whalefile.py: {e}[/red]")
         if args.verbose:
             error_console.print_exception()
         sys.exit(1)

@@ -12,7 +12,7 @@ pip install -e .
 
 ## CLI Reference
 
-The `whaler` command executes your `whaler.py` file with the specified command and services.
+The `whaler` command executes your `whalefile.py` file with the specified command and services.
 
 ```bash
 whaler [command] [services...]
@@ -20,20 +20,20 @@ whaler [command] [services...]
 
 ### Commands
 
-- `whaler up [services]` - Start services (executes whaler.py with 'up' command)
-- `whaler build [services]` - Build services (executes whaler.py with 'build' command)
-- `whaler down [services]` - Stop services (executes whaler.py with 'down' command)
+- `whaler up [services]` - Start services (executes whalefile.py with 'up' command)
+- `whaler build [services]` - Build services (executes whalefile.py with 'build' command)
+- `whaler down [services]` - Stop services (executes whalefile.py with 'down' command)
 
 ### Options
 
-- `-f, --file FILE` - Path to whaler file (default: whaler.py)
+- `-f, --file FILE` - Path to whaler file (default: whalefile.py)
 - `-v, --version` - Show version
 - `-h, --help` - Show help
 
 ### Examples
 
 ```bash
-# Execute whaler.py with up command
+# Execute whalefile.py with up command
 whaler up
 
 # Build specific services
@@ -43,7 +43,7 @@ whaler build api web
 whaler up postgres redis
 
 # Use custom whaler file
-whaler -f custom-whaler.py up
+whaler -f custom.py up
 ```
 
 ## Examples
