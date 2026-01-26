@@ -5,4 +5,4 @@ from .tui import TUI, tui
 
 __all__ = ["tui", "TUI", "builtin", "setup_logger", "Stack"]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
