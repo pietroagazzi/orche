@@ -12,7 +12,7 @@ pip install -e .
 
 ## CLI Reference
 
-The `whaler` command executes your `whalefile.py` file with the specified command and services.
+The `whaler` command executes your `whalerfile.py` file with the specified command and services.
 
 ```bash
 whaler [command] [services...]
@@ -20,20 +20,20 @@ whaler [command] [services...]
 
 ### Commands
 
-- `whaler up [services]` - Start services (executes whalefile.py with 'up' command)
-- `whaler build [services]` - Build services (executes whalefile.py with 'build' command)
-- `whaler down [services]` - Stop services (executes whalefile.py with 'down' command)
+- `whaler up [services]` - Start services (executes whalerfile.py with 'up' command)
+- `whaler build [services]` - Build services (executes whalerfile.py with 'build' command)
+- `whaler down [services]` - Stop services (executes whalerfile.py with 'down' command)
 
 ### Options
 
-- `-f, --file FILE` - Path to whaler file (default: whalefile.py)
+- `-f, --file FILE` - Path to whaler file (default: whalerfile.py)
 - `-v, --version` - Show version
 - `-h, --help` - Show help
 
 ### Examples
 
 ```bash
-# Execute whalefile.py with up command
+# Execute whalerfile.py with up command
 whaler up
 
 # Build specific services
@@ -85,21 +85,6 @@ stack.build(["api", "web"])
 stack.up(["postgres", "redis"])
 ```
 
-### Interactive Script
-
-```python
-from whaler import Stack, tui
-
-project_name = tui.input("Project name: ", default="myproject")
-environment = tui.input("Environment (dev/prod): ", default="dev")
-
-stack = Stack(
-    compose_files=[f"docker-compose.{environment}.yml"],
-    project_name=project_name
-)
-
-stack.build().up()
-```
 
 ## Requirements
 

@@ -1,159 +1,157 @@
 """Command-line interface for Whaler."""
 
-import argparse
-import os
+import importlib.util
 import sys
 from pathlib import Path
-from typing import Literal, NoReturn
+from typing import NoReturn
 
+import click
 from dotenv import load_dotenv
 from rich.console import Console
 
 from whaler import __version__
 from whaler.logger import setup_logger
-
-CommandName = Literal["up", "build", "down", "stop"]
-
-
-def find_whaler_file() -> Path:
-    """Find whalefile.py in current directory.
-
-    Returns:
-        Path to whalefile.py file
-
-    Raises:
-        FileNotFoundError: If whalefile.py is not found
-    """
-    whaler_file = Path.cwd() / "whalefile.py"
-    if not whaler_file.exists():
-        raise FileNotFoundError(
-            f"whalefile.py not found in {Path.cwd()}\n"
-            "Make sure you're in a directory with a whalefile.py file."
-        )
-    return whaler_file
+from whaler.stack import CommandType, Stack
 
 
-def execute_whaler_file(
-    whaler_file: Path,
-    command: str,
-    services: list[str],
-    verbose: bool = False,
-) -> None:
-    """Execute whalefile.py file with given command.
+def find_or_validate_whalerfile(file_path: Path) -> Path:
+    """Find whalerfile.py or validate custom path.
 
     Args:
-        whaler_file: Path to whalefile.py file
-        command: Command to execute (up, build, down, stop)
-        services: List of service names
-        verbose: Enable verbose/debug logging
+        file_path: Path to whalerfile (may be relative or absolute)
+
+    Returns:
+        Absolute path to validated whalerfile
+
+    Raises:
+        FileNotFoundError: If whalerfile is not found
     """
-    # Load environment variables from .env file
-    load_dotenv()
+    # Default case: search for whalerfile.py in current directory
+    if file_path.name == "whalerfile.py" and not file_path.is_absolute():
+        whaler_file = Path.cwd() / "whalerfile.py"
+        if not whaler_file.exists():
+            raise FileNotFoundError(
+                f"whalerfile.py not found in {Path.cwd()}\n"
+                "Make sure you're in a directory with a whalerfile.py file."
+            )
+        return whaler_file
 
-    # Setup logging based on verbosity
-    setup_logger(verbose=verbose)
+    # Custom path: validate it exists
+    resolved_path = file_path if file_path.is_absolute() else Path.cwd() / file_path
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"File not found: {resolved_path}")
+    return resolved_path.resolve()
 
-    # Add current working directory to sys.path to allow local imports
-    if os.getcwd() not in sys.path:
-        sys.path.insert(0, os.getcwd())
 
-    # Prepare sys.argv for the whalefile.py script
-    # This allows the script to access command and services via sys.argv
-    original_argv = sys.argv.copy()
-    sys.argv = ["whalefile.py", command] + services
+def import_whalerfile(whalerfile_path: Path) -> Stack:
+    """Import whalerfile.py as a module and extract stack instance.
+
+    Uses importlib to load the whalerfile as a proper Python module,
+    similar to how Flask loads app instances.
+
+    Args:
+        whalerfile_path: Path to whalerfile.py
+
+    Returns:
+        Stack instance from whalerfile
+
+    Raises:
+        ImportError: If whalerfile cannot be imported
+        AttributeError: If 'stack' variable not found in module
+        TypeError: If 'stack' is not a Stack instance
+    """
+    # Add whalerfile directory to sys.path for local imports
+    whaler_dir = whalerfile_path.parent.resolve()
+    if str(whaler_dir) not in sys.path:
+        sys.path.insert(0, str(whaler_dir))
+
+    # Load module from file
+    module_name = whalerfile_path.stem
+    spec = importlib.util.spec_from_file_location(module_name, whalerfile_path)
+
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {whalerfile_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
 
     try:
-        # Read and execute the whalefile.py file
-        with open(whaler_file, encoding="utf-8") as f:
-            code = compile(f.read(), str(whaler_file), "exec")
-            # Execute in global namespace so imports work correctly
-            exec(code, {"__name__": "__main__", "__file__": str(whaler_file)})
-    finally:
-        # Restore original sys.argv
-        sys.argv = original_argv
+        spec.loader.exec_module(module)
+    except Exception as e:
+        raise ImportError(f"Failed to execute whalerfile: {e}") from e
+
+    # Extract 'stack' variable (convention-based loading)
+    if not hasattr(module, "stack"):
+        raise AttributeError(
+            f"Whalerfile {whalerfile_path} must define a 'stack' variable.\n"
+            f"Example: stack = Stack(name='my-stack', "
+            "compose_files=['docker-compose.yml'])"
+        )
+
+    stack = module.stack
+    if not isinstance(stack, Stack):
+        raise TypeError(
+            f"'stack' variable must be a Stack instance, got {type(stack).__name__}"
+        )
+
+    return stack
 
 
-def main() -> NoReturn:
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Whaler - Docker Compose Stack Orchestrator",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  whaler up              Execute whalefile.py with 'up' command
-  whaler up api web      Execute whalefile.py with 'up' command for specific services
-  whaler build           Execute whalefile.py with 'build' command
-  whaler down            Execute whalefile.py with 'down' command
-  whaler stop            Execute whalefile.py with 'stop' command
-  whaler -v up           Execute with verbose/debug logging
+@click.command()
+@click.argument("command", type=click.Choice(["up", "build", "down", "stop"]))
+@click.argument("services", nargs=-1)
+@click.option(
+    "-f",
+    "--file",
+    default="whalerfile.py",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Path to whalerfile (default: whalerfile.py)",
+)
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose/debug logging")
+@click.version_option(version=__version__, prog_name="whaler")
+def main(
+    command: CommandType, services: tuple[str, ...], file: Path, verbose: bool
+) -> NoReturn:
+    """Whaler - Docker Compose Stack Orchestrator
 
-The whalefile.py file in the current directory will be executed with the
-specified command and services available via sys.argv.
-        """,
-    )
-
-    parser.add_argument(
-        "command",
-        choices=["up", "build", "down", "stop"],
-        help="Command to execute (up, build, down, or stop)",
-    )
-
-    parser.add_argument(
-        "services",
-        nargs="*",
-        default=[],
-        help="Optional service names to operate on",
-    )
-
-    parser.add_argument(
-        "-f",
-        "--file",
-        default="whalefile.py",
-        help="Path to whaler file (default: whalefile.py)",
-    )
-
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable verbose/debug logging",
-    )
-
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"whaler {__version__}",
-    )
-
-    args = parser.parse_args()
-
+    Execute commands defined in your whalerfile.py with Docker Compose.
+    """
     error_console = Console(stderr=True)
 
-    # Find whalefile.py file
+    # Load environment variables
+    load_dotenv()
+
+    # Setup logging
+    setup_logger(verbose=verbose)
+
+    # Find whalerfile
     try:
-        if args.file == "whalefile.py":
-            whaler_file = find_whaler_file()
-        else:
-            whaler_file = Path(args.file)
-            if not whaler_file.exists():
-                error_console.print(f"[red]Error: File not found: {whaler_file}[/red]")
-                sys.exit(1)
+        whaler_file = find_or_validate_whalerfile(file)
     except FileNotFoundError as e:
         error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    # Execute whalefile.py with command
+    # Import whalerfile and get stack
     try:
-        execute_whaler_file(
-            whaler_file, args.command, args.services, verbose=args.verbose
-        )
+        stack = import_whalerfile(whaler_file)
+    except (ImportError, AttributeError, TypeError) as e:
+        error_console.print(f"[red]Error loading whalerfile: {e}[/red]")
+        if verbose:
+            error_console.print_exception()
+        sys.exit(1)
+
+    # Execute command through stack
+    try:
+        stack.run(command=command, services=list(services))
         sys.exit(0)
+    except SystemExit:
+        raise  # Allow stack.run() to control exit codes
     except KeyboardInterrupt:
         error_console.print("\n[yellow]Interrupted by user[/yellow]")
         sys.exit(130)
     except Exception as e:
-        error_console.print(f"[red]Error executing whalefile.py: {e}[/red]")
-        if args.verbose:
+        error_console.print(f"[red]Error executing command: {e}[/red]")
+        if verbose:
             error_console.print_exception()
         sys.exit(1)
 
