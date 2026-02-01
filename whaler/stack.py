@@ -125,38 +125,28 @@ class Stack:
         # Runtime context
         self._active_services: list[str] = []
 
-    def active(self, service: str) -> bool:
-        """Check if a service is active in the current execution context.
+    def on(self, services: str | list[str]) -> bool:
+        """Return True if at least one of the specified services is active.
 
-        If no specific services were requested (empty list),
-        all services are considered active.
-        """
-        if not self._active_services:
-            return True
-        return service in self._active_services
-
-    def on(self, services: list[str] | None = None) -> bool:
-        """Check if any of the specified services are active in the
-        current execution context.
-
-        Uses OR logic: returns True if at least one of the specified services is active.
+        This method uses OR logic across the provided service names and checks
+        membership against the current execution context (``self._active_services``).
 
         Args:
-            services: List of service names to check. If None or empty, returns True.
+            services: A service name or list of service names to check.
 
         Returns:
-            True if:
-            - No services parameter provided (services=None or services=[])
-            - Any of the specified services are active (checked via active())
-            False otherwise.
+            True if any of the specified services are active, False otherwise.
         """
-        # No services specified - no filter, always True
-        if not services:
+        # Convert single service string to list
+        if isinstance(services, str):
+            services = [services]
+
+        # If no services specified via CLI, all services are active
+        if not self._active_services:
             return True
 
         # Check if any service in the list is active (OR logic)
-        # The "no CLI services => all active" rule is delegated to active()
-        return any(self.active(s) for s in services)
+        return any(s in self._active_services for s in services)
 
     def build(self, services: list[str] | None = None) -> "Stack":
         """Build services in the stack.
@@ -170,10 +160,12 @@ class Stack:
             Self for method chaining
         """
         target_services = services if services is not None else self._active_services
+
         if target_services:
             self.logger.info(f"Building services: {', '.join(target_services)}")
         else:
             self.logger.info("Building all services")
+
         self._docker.build(services=target_services if target_services else None)
         return self
 
@@ -190,15 +182,17 @@ class Stack:
             Self for method chaining
         """
         target_services = services if services is not None else self._active_services
+
         if target_services:
             self.logger.info(f"Starting services: {', '.join(target_services)}")
         else:
             self.logger.info("Starting all services")
-        self._docker.up(
-            services=target_services if target_services else None, wait=wait
-        )
+
+        self._docker.up(services=target_services or None, wait=wait)
+
         if wait:
             self.logger.info("Services are ready")
+
         return self
 
     def down(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
@@ -212,6 +206,7 @@ class Stack:
             Self for method chaining
         """
         target_services = services if services is not None else self._active_services
+
         if target_services:
             self.logger.info(
                 f"Stopping and removing services: {', '.join(target_services)}"
@@ -222,6 +217,7 @@ class Stack:
         self._docker.down(
             services=target_services if target_services else None, volumes=volumes
         )
+
         return self
 
     def stop(self, services: list[str] | None = None) -> "Stack":
@@ -234,29 +230,31 @@ class Stack:
             Self for method chaining
         """
         target_services = services if services is not None else self._active_services
+
         if target_services:
             self.logger.info(f"Stopping services: {', '.join(target_services)}")
         else:
             self.logger.info("Stopping all services")
+
         self._docker.stop(services=target_services if target_services else None)
+
         return self
 
-    def run(self) -> None:
-        """Parse CLI arguments and execute the requested command."""
-        if len(sys.argv) < 2:
-            self.logger.info(f"Stack: {self.project_name or 'Whaler'}")
-            self.logger.info("\nUsage: python whalefile.py <command> [services...]")
-            self.logger.info("\nAvailable commands:")
-            for cmd in self.commands._commands:
-                self.logger.info(f"  - {cmd}")
-            sys.exit(1)
+    def run(self, command: CommandType, services: list[str] | None = None) -> None:
+        """Execute a command with services.
 
-        command_name = sys.argv[1]
-        self._active_services = sys.argv[2:]
+        Args:
+            command: Command name to execute.
+            services: List of service names.
+        """
+        # Set active services for filtering
+        self._active_services = services or []
 
-        handler = self.commands.get(command_name)
+        # Get and execute command handler
+        handler = self.commands.get(command)
+
         if not handler:
-            self.logger.error(f"Unknown command '{command_name}'")
+            self.logger.error(f"Unknown command '{command}'")
             self.logger.info(
                 f"Available commands: {', '.join(self.commands._commands.keys())}"
             )

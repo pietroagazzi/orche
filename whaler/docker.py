@@ -85,11 +85,7 @@ class DockerComposeWrapper:
             DockerComposeError: If up command fails
         """
         try:
-            self.compose.up(
-                services=services,
-                detach=detach,
-                wait=wait,
-            )
+            self.compose.up(services=services, detach=detach, wait=wait)
         except DockerException as e:
             raise DockerComposeError(f"Failed to start services: {e}") from e
         except Exception as e:
