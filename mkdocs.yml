@@ -1,0 +1,55 @@
+site_name: Orche
+site_description: A Python orchestrator for Docker Compose stacks
+repo_url: https://github.com/pietroagazzi/orche
+
+theme:
+    name: material
+    palette:
+        - media: "(prefers-color-scheme: light)"
+          scheme: default
+          toggle:
+              icon: material/brightness-7
+              name: Switch to dark mode
+        - media: "(prefers-color-scheme: dark)"
+          scheme: slate
+          toggle:
+              icon: material/brightness-4
+              name: Switch to light mode
+    features:
+        - navigation.tabs
+        - navigation.top
+        - content.code.copy
+        - content.code.annotate
+
+plugins:
+    - search
+    - mkdocstrings:
+          handlers:
+              python:
+                  options:
+                      docstring_style: google
+                      show_source: true
+
+nav:
+    - Home: index.md
+    - Installation: installation.md
+    - Quickstart: quickstart.md
+    - Guides:
+          - Service Filtering: guides/services.md
+          - Hooks (Pre/Post): guides/hooks.md
+          - Plugins & Custom Commands: guides/plugins.md
+    - CLI Reference: cli-reference.md
+    - API Reference:
+          - Stack: api/stack.md
+          - CommandRegistry: api/command-registry.md
+          - Built-ins: api/builtin.md
+          - Exceptions: api/exceptions.md
+
+markdown_extensions:
+    - admonition
+    - pymdownx.details
+    - pymdownx.superfences
+    - pymdownx.highlight
+    - pymdownx.tabbed:
+          alternate_style: true
+    - attr_list
