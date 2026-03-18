@@ -10,8 +10,42 @@ from dotenv import load_dotenv
 from .docker import DockerComposeWrapper
 from .logger import get_logger
 
-CommandType = Literal["up", "build", "down", "stop"]
+BuiltinCommandType = Literal["up", "build", "down", "stop"]
+
 T = TypeVar("T", bound=Callable[[], None])
+
+
+class CommandHandle(Generic[T]):
+    """A command slot with optional before/after hooks."""
+
+    def __init__(self, name: str, registry: "CommandRegistry[T]") -> None:
+        self._name = name
+        self._registry = registry
+
+    def __call__(self, func: T) -> T:
+        """Register func as the main handler (backward-compatible decorator)."""
+        self._registry._commands[self._name] = func  # type: ignore[assignment]
+        return func
+
+    @property
+    def before(self) -> Callable[[T], T]:
+        """Decorator to register a before-hook for this command."""
+
+        def decorator(func: T) -> T:
+            self._registry._before_hooks.setdefault(self._name, []).append(func)  # type: ignore[arg-type]
+            return func
+
+        return decorator
+
+    @property
+    def after(self) -> Callable[[T], T]:
+        """Decorator to register an after-hook for this command."""
+
+        def decorator(func: T) -> T:
+            self._registry._after_hooks.setdefault(self._name, []).append(func)  # type: ignore[arg-type]
+            return func
+
+        return decorator
 
 
 class CommandRegistry(Generic[T]):
@@ -19,39 +53,48 @@ class CommandRegistry(Generic[T]):
 
     def __init__(self) -> None:
         self._commands: dict[str, Callable[[], None]] = {}
+        self._before_hooks: dict[str, list[Callable[[], None]]] = {}
+        self._after_hooks: dict[str, list[Callable[[], None]]] = {}
 
-    def register(self, name: str) -> Callable[[T], T]:
+    def register(self, name: str) -> "CommandHandle[T]":
         """Decorator to register a command."""
-
-        def decorator(func: T) -> T:
-            self._commands[name] = func  # type: ignore[assignment]
-            return func
-
-        return decorator
+        return CommandHandle(name, self)
 
     @property
-    def up(self) -> Callable[[T], T]:
+    def up(self) -> "CommandHandle[T]":
         """Decorator for the 'up' command."""
         return self.register("up")
 
     @property
-    def down(self) -> Callable[[T], T]:
+    def down(self) -> "CommandHandle[T]":
         """Decorator for the 'down' command."""
         return self.register("down")
 
     @property
-    def build(self) -> Callable[[T], T]:
+    def build(self) -> "CommandHandle[T]":
         """Decorator for the 'build' command."""
         return self.register("build")
 
     @property
-    def stop(self) -> Callable[[T], T]:
+    def stop(self) -> "CommandHandle[T]":
         """Decorator for the 'stop' command."""
         return self.register("stop")
 
     def get(self, name: str) -> Callable[[], None] | None:
         """Get a registered command handler."""
         return self._commands.get(name)
+
+    def available_commands(self) -> list[str]:
+        """Return list of registered command names."""
+        return list(self._commands.keys())
+
+    def get_before_hooks(self, name: str) -> list[Callable[[], None]]:
+        """Return before-hooks for the given command."""
+        return self._before_hooks.get(name, [])
+
+    def get_after_hooks(self, name: str) -> list[Callable[[], None]]:
+        """Return after-hooks for the given command."""
+        return self._after_hooks.get(name, [])
 
 
 class Stack:
@@ -240,7 +283,7 @@ class Stack:
 
         return self
 
-    def run(self, command: CommandType, services: list[str] | None = None) -> None:
+    def run(self, command: str, services: list[str] | None = None) -> None:
         """Execute a command with services.
 
         Args:
@@ -254,18 +297,45 @@ class Stack:
         handler = self.commands.get(command)
 
         if not handler:
+            available = self.commands.available_commands()
             self.logger.error(f"Unknown command '{command}'")
-            self.logger.info(
-                f"Available commands: {', '.join(self.commands._commands.keys())}"
-            )
+            if available:
+                self.logger.info(f"Available commands: {', '.join(available)}")
+            else:
+                self.logger.info(
+                    "No commands registered — did you forget @stack.commands.up?"
+                )
             sys.exit(1)
 
+        before_hooks = self.commands.get_before_hooks(command)
+        after_hooks = self.commands.get_after_hooks(command)
+
         try:
-            handler()
+            for hook in before_hooks:
+                hook()
+
+            main_error: BaseException | None = None
+            try:
+                handler()
+            except KeyboardInterrupt:
+                self.logger.warning("\nInterrupted by user")
+                sys.exit(130)
+            except Exception as e:
+                self.logger.error(f"Command failed: {e}")
+                self.logger.debug("Exception details:", exc_info=True)
+                main_error = e
+
+            for hook in after_hooks:
+                try:
+                    hook()
+                except Exception as e:
+                    self.logger.warning(f"After-hook failed: {e}")
+
+            if main_error is not None:
+                sys.exit(1)
+
+        except SystemExit:
+            raise
         except KeyboardInterrupt:
             self.logger.warning("\nInterrupted by user")
             sys.exit(130)
-        except Exception as e:
-            self.logger.error(f"Command failed: {e}")
-            self.logger.debug("Exception details:", exc_info=True)
-            sys.exit(1)

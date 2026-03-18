@@ -11,7 +11,7 @@ from rich.console import Console
 
 from orche import __version__
 from orche.logger import setup_logger
-from orche.stack import CommandType, Stack
+from orche.stack import Stack
 
 
 def find_or_validate_orchefile(file_path: Path) -> Path:
@@ -97,8 +97,13 @@ def import_orchefile(orchefile_path: Path) -> Stack:
     return stack
 
 
-@click.command()
-@click.argument("command", type=click.Choice(["up", "build", "down", "stop"]))
+@click.command(
+    epilog=(
+        "Built-in commands: up, build, down, stop. "
+        "Custom commands defined in orchefile.py."
+    )
+)
+@click.argument("command")
 @click.argument("services", nargs=-1)
 @click.option(
     "-f",
@@ -110,7 +115,7 @@ def import_orchefile(orchefile_path: Path) -> Stack:
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose/debug logging")
 @click.version_option(version=__version__, prog_name="orche")
 def main(
-    command: CommandType, services: tuple[str, ...], file: Path, verbose: bool
+    command: str, services: tuple[str, ...], file: Path, verbose: bool
 ) -> NoReturn:
     """Orche - Docker Compose Stack Orchestrator
 
@@ -138,6 +143,17 @@ def main(
         error_console.print(f"[red]Error loading orchefile: {e}[/red]")
         if verbose:
             error_console.print_exception()
+        sys.exit(1)
+
+    # Validate command against registered commands
+    available = stack.commands.available_commands()
+    if command not in available:
+        msg = f"Unknown command '{command}'."
+        if available:
+            msg += f" Available: {', '.join(available)}"
+        else:
+            msg += " No commands registered — did you forget @stack.commands.up?"
+        error_console.print(f"[red]Error: {msg}[/red]")
         sys.exit(1)
 
     # Execute command through stack
