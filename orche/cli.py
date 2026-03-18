@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import NoReturn
 
 import click
-from dotenv import load_dotenv
 from rich.console import Console
 
 from orche import __version__
@@ -32,7 +31,7 @@ def find_or_validate_orchefile(file_path: Path) -> Path:
         if not orchefile.exists():
             raise FileNotFoundError(
                 f"orchefile.py not found in {Path.cwd()}\n"
-                "Make sure you're in a directory with a orchefile.py file."
+                "Make sure you're in a directory with an orchefile.py file."
             )
         return orchefile
 
@@ -122,9 +121,6 @@ def main(
     Execute commands defined in your orchefile.py with Docker Compose.
     """
     error_console = Console(stderr=True)
-
-    # Load environment variables
-    load_dotenv()
 
     # Setup logging
     setup_logger(verbose=verbose)

@@ -86,6 +86,7 @@ stack.build(["api", "web"])
 stack.up(["postgres", "redis"])
 ```
 
+If your compose files live under another directory, pass `path` and keep `compose_files` relative to that directory.
 
 ## Requirements
 

@@ -5,8 +5,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
-from dotenv import load_dotenv
-
 from .docker import DockerComposeWrapper
 from .logger import get_logger
 
@@ -105,46 +103,40 @@ class Stack:
         name: str | None = None,
         path: str | Path = ".",
         compose_files: list[str] | list[Path] | None = None,
-        load_env: bool = True,
     ):
         """Initialize a Docker Compose stack.
 
         Args:
             name: Optional project name (defaults to directory name)
             path: Project root path (defaults to current directory)
-            compose_files: List of docker-compose file paths (relative to cwd or abs).
+            compose_files: List of docker-compose file paths
+                          (relative to project path or abs).
                           Files are merged in order (later files override earlier ones).
                           Defaults to ["docker-compose.yml"] if None.
                           Cannot be an empty list.
-            load_env: Whether to load .env file from project path
 
         Raises:
             ValueError: If compose_files is an empty list
             FileNotFoundError: If any compose file does not exist
         """
-        if compose_files is None:
-            compose_files = ["docker-compose.yml"]
-        elif not compose_files:  # Empty list check
+        self.project_path: Path = Path(path).resolve()
+        self.project_name = name
+        self.logger = get_logger()
+
+        compose_file_inputs = (
+            ["docker-compose.yml"] if compose_files is None else compose_files
+        )
+        if not compose_file_inputs:
             raise ValueError(
                 "compose_files cannot be an empty list. "
                 "Either omit the parameter to use the default ['docker-compose.yml'], "
                 "or provide at least one compose file path."
             )
 
-        self.project_path: Path = Path(path).resolve()
         self.compose_files = [
-            (cf_path if cf_path.is_absolute() else (Path.cwd() / cf_path)).resolve()
-            for cf_path in (Path(cf) for cf in compose_files)
+            (cf if cf.is_absolute() else self.project_path / cf).resolve()
+            for cf in (Path(item) for item in compose_file_inputs)
         ]
-        self.project_name = name
-        self.logger = get_logger()
-
-        # Load .env file if it exists
-        if load_env:
-            env_file = self.project_path / ".env"
-            if env_file.exists():
-                load_dotenv(env_file)
-                self.logger.debug(f"Loaded environment from {env_file}")
 
         # Validate all compose files exist
         missing_files = [cf for cf in self.compose_files if not cf.exists()]

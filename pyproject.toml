@@ -10,7 +10,6 @@ requires-python = ">=3.10,<4"
 dependencies = [
     "python-on-whales>=0.80.0,<0.81.0",
     "rich>=13.0.0",
-    "python-dotenv>=1.0.0",
     "PyYAML>=6.0",
     "GitPython>=3.1.0",
     "click>=8.1.0",
