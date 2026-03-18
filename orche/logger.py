@@ -1,4 +1,4 @@
-"""Logging configuration for Whaler."""
+"""Logging configuration for Orche."""
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -32,9 +32,9 @@ def setup_logger(
 
     # Rotating file handler
     # Ensure log directory exists
-    log_dir = Path.cwd() / ".whaler" / "logs"
+    log_dir = Path.cwd() / ".orche" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "whaler.log"
+    log_file = log_dir / "orche.log"
 
     file_handler = RotatingFileHandler(
         log_file,
@@ -60,14 +60,11 @@ def setup_logger(
         )
         console_handler.setLevel(logging.DEBUG)
         logger.addHandler(console_handler)
-    else:
-        # If not verbose, don't log to console at all
-        pass
 
     return logger
 
 
-def get_logger(name: str = "whaler") -> logging.Logger:
+def get_logger(name: str = "orche") -> logging.Logger:
     """Get logger instance.
 
     Args:

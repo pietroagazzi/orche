@@ -1,4 +1,6 @@
-# Whaler
+# Orche
+
+[![CI](https://github.com/pietroagazzi/orche/actions/workflows/ci.yml/badge.svg)](https://github.com/pietroagazzi/orche/actions/workflows/ci.yml)
 
 A simple, lightweight Python orchestrator for Docker Compose stacks.
 
@@ -10,38 +12,39 @@ pip install -e .
 
 ## CLI Reference
 
-The `whaler` command executes your `whaler.py` file with the specified command and services.
+The `orche` command executes your `orchefile.py` file with the specified command and services.
 
 ```bash
-whaler [command] [services...]
+orche [command] [services...]
 ```
 
 ### Commands
 
-- `whaler up [services]` - Start services (executes whaler.py with 'up' command)
-- `whaler build [services]` - Build services (executes whaler.py with 'build' command)
-- `whaler down [services]` - Stop services (executes whaler.py with 'down' command)
+- `orche up [services]` - Start services (executes orchefile.py with 'up' command)
+- `orche build [services]` - Build services (executes orchefile.py with 'build' command)
+- `orche down [services]` - Stop services (executes orchefile.py with 'down' command)
 
 ### Options
 
-- `-f, --file FILE` - Path to whaler file (default: whaler.py)
-- `-v, --version` - Show version
-- `-h, --help` - Show help
+- `-f, --file FILE` - Path to orche file (default: orchefile.py)
+- `-v, --verbose` - Enable verbose logging
+- `--version` - Show version and exit
+- `--help` - Show help and exit
 
 ### Examples
 
 ```bash
-# Execute whaler.py with up command
-whaler up
+# Execute orchefile.py with up command
+orche up
 
 # Build specific services
-whaler build api web
+orche build api web
 
 # Start specific services
-whaler up postgres redis
+orche up postgres redis
 
-# Use custom whaler file
-whaler -f custom-whaler.py up
+# Use custom orche file
+orche -f custom.py up
 ```
 
 ## Examples
@@ -49,21 +52,21 @@ whaler -f custom-whaler.py up
 ### Basic Usage
 
 ```python
-from whaler import Stack
+from orche import Stack
 
-stack = Stack("docker-compose.yml")
+stack = Stack(compose_files=["docker-compose.yml"])
 stack.build().up()
 ```
 
 ### With Project Name
 
 ```python
-from whaler import Stack
+from orche import Stack
 
 stack = Stack(
-    compose_file="docker-compose.yml",
-    project_name="myapp",
-    project_path="/path/to/project"
+    compose_files=["docker-compose.yml"],
+    name="myapp",
+    path="/path/to/project"
 )
 
 stack.build().up(wait=True)
@@ -72,9 +75,9 @@ stack.build().up(wait=True)
 ### Specific Services
 
 ```python
-from whaler import Stack
+from orche import Stack
 
-stack = Stack("docker-compose.yml")
+stack = Stack(compose_files=["docker-compose.yml"])
 
 # Build specific services
 stack.build(["api", "web"])
@@ -83,25 +86,11 @@ stack.build(["api", "web"])
 stack.up(["postgres", "redis"])
 ```
 
-### Interactive Script
-
-```python
-from whaler import Stack, tui
-
-project_name = tui.input("Project name: ", default="myproject")
-environment = tui.input("Environment (dev/prod): ", default="dev")
-
-stack = Stack(
-    compose_file=f"docker-compose.{environment}.yml",
-    project_name=project_name
-)
-
-stack.build().up()
-```
+If your compose files live under another directory, pass `path` and keep `compose_files` relative to that directory.
 
 ## Requirements
 
-- Python >= 3.14
+- Python >= 3.10
 - Docker and Docker Compose installed on the system
 
 ## Development
@@ -121,11 +110,11 @@ pytest
 Type checking:
 
 ```bash
-mypy whaler
+mypy orche
 ```
 
 Linting:
 
 ```bash
-ruff check whaler
+ruff check orche
 ```

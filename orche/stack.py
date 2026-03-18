@@ -1,0 +1,333 @@
+"""Main Stack class for orchestrating Docker Compose stacks."""
+
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from typing import Generic, Literal, TypeVar
+
+from .docker import DockerComposeWrapper
+from .logger import get_logger
+
+BuiltinCommandType = Literal["up", "build", "down", "stop"]
+
+T = TypeVar("T", bound=Callable[[], None])
+
+
+class CommandHandle(Generic[T]):
+    """A command slot with optional before/after hooks."""
+
+    def __init__(self, name: str, registry: "CommandRegistry[T]") -> None:
+        self._name = name
+        self._registry = registry
+
+    def __call__(self, func: T) -> T:
+        """Register func as the main handler (backward-compatible decorator)."""
+        self._registry._commands[self._name] = func  # type: ignore[assignment]
+        return func
+
+    @property
+    def before(self) -> Callable[[T], T]:
+        """Decorator to register a before-hook for this command."""
+
+        def decorator(func: T) -> T:
+            self._registry._before_hooks.setdefault(self._name, []).append(func)  # type: ignore[arg-type]
+            return func
+
+        return decorator
+
+    @property
+    def after(self) -> Callable[[T], T]:
+        """Decorator to register an after-hook for this command."""
+
+        def decorator(func: T) -> T:
+            self._registry._after_hooks.setdefault(self._name, []).append(func)  # type: ignore[arg-type]
+            return func
+
+        return decorator
+
+
+class CommandRegistry(Generic[T]):
+    """Registry for stack commands."""
+
+    def __init__(self) -> None:
+        self._commands: dict[str, Callable[[], None]] = {}
+        self._before_hooks: dict[str, list[Callable[[], None]]] = {}
+        self._after_hooks: dict[str, list[Callable[[], None]]] = {}
+
+    def register(self, name: str) -> "CommandHandle[T]":
+        """Decorator to register a command."""
+        return CommandHandle(name, self)
+
+    @property
+    def up(self) -> "CommandHandle[T]":
+        """Decorator for the 'up' command."""
+        return self.register("up")
+
+    @property
+    def down(self) -> "CommandHandle[T]":
+        """Decorator for the 'down' command."""
+        return self.register("down")
+
+    @property
+    def build(self) -> "CommandHandle[T]":
+        """Decorator for the 'build' command."""
+        return self.register("build")
+
+    @property
+    def stop(self) -> "CommandHandle[T]":
+        """Decorator for the 'stop' command."""
+        return self.register("stop")
+
+    def get(self, name: str) -> Callable[[], None] | None:
+        """Get a registered command handler."""
+        return self._commands.get(name)
+
+    def available_commands(self) -> list[str]:
+        """Return list of registered command names."""
+        return list(self._commands.keys())
+
+    def get_before_hooks(self, name: str) -> list[Callable[[], None]]:
+        """Return before-hooks for the given command."""
+        return self._before_hooks.get(name, [])
+
+    def get_after_hooks(self, name: str) -> list[Callable[[], None]]:
+        """Return after-hooks for the given command."""
+        return self._after_hooks.get(name, [])
+
+
+class Stack:
+    """Main orchestrator for Docker Compose stacks."""
+
+    def __init__(
+        self,
+        name: str | None = None,
+        path: str | Path = ".",
+        compose_files: list[str] | list[Path] | None = None,
+    ):
+        """Initialize a Docker Compose stack.
+
+        Args:
+            name: Optional project name (defaults to directory name)
+            path: Project root path (defaults to current directory)
+            compose_files: List of docker-compose file paths
+                          (relative to project path or abs).
+                          Files are merged in order (later files override earlier ones).
+                          Defaults to ["docker-compose.yml"] if None.
+                          Cannot be an empty list.
+
+        Raises:
+            ValueError: If compose_files is an empty list
+            FileNotFoundError: If any compose file does not exist
+        """
+        self.project_path: Path = Path(path).resolve()
+        self.project_name = name
+        self.logger = get_logger()
+
+        compose_file_inputs = (
+            ["docker-compose.yml"] if compose_files is None else compose_files
+        )
+        if not compose_file_inputs:
+            raise ValueError(
+                "compose_files cannot be an empty list. "
+                "Either omit the parameter to use the default ['docker-compose.yml'], "
+                "or provide at least one compose file path."
+            )
+
+        self.compose_files = [
+            (cf if cf.is_absolute() else self.project_path / cf).resolve()
+            for cf in (Path(item) for item in compose_file_inputs)
+        ]
+
+        # Validate all compose files exist
+        missing_files = [cf for cf in self.compose_files if not cf.exists()]
+        if missing_files:
+            files_str = "\n  ".join(str(f) for f in missing_files)
+            raise FileNotFoundError(
+                f"Docker Compose file(s) not found:\n  {files_str}\n"
+                f"Please ensure the file(s) exist or provide the correct path(s)."
+            )
+
+        # Initialize Docker wrapper
+        self._docker = DockerComposeWrapper(
+            compose_files=self.compose_files,
+            project_name=self.project_name,
+            project_path=self.project_path,
+        )
+
+        # Command registry
+        self.commands: CommandRegistry[Callable[[], None]] = CommandRegistry()
+
+        # Runtime context
+        self._active_services: list[str] = []
+
+    def on(self, services: str | list[str]) -> bool:
+        """Return True if at least one of the specified services is active.
+
+        This method uses OR logic across the provided service names and checks
+        membership against the current execution context (``self._active_services``).
+
+        Args:
+            services: A service name or list of service names to check.
+
+        Returns:
+            True if any of the specified services are active, False otherwise.
+        """
+        # Convert single service string to list
+        if isinstance(services, str):
+            services = [services]
+
+        # If no services specified via CLI, all services are active
+        if not self._active_services:
+            return True
+
+        # Check if any service in the list is active (OR logic)
+        return any(s in self._active_services for s in services)
+
+    def build(self, services: list[str] | None = None) -> "Stack":
+        """Build services in the stack.
+
+        If 'services' is not provided, uses the active services from CLI args.
+
+        Args:
+            services: Optional list of specific services to build
+
+        Returns:
+            Self for method chaining
+        """
+        target_services = services if services is not None else self._active_services
+
+        if target_services:
+            self.logger.info(f"Building services: {', '.join(target_services)}")
+        else:
+            self.logger.info("Building all services")
+
+        self._docker.build(services=target_services if target_services else None)
+        return self
+
+    def up(self, services: list[str] | None = None, wait: bool = True) -> "Stack":
+        """Start services in the stack.
+
+        If 'services' is not provided, uses the active services from CLI args.
+
+        Args:
+            services: Optional list of specific services to start
+            wait: If True, wait for services to be running
+
+        Returns:
+            Self for method chaining
+        """
+        target_services = services if services is not None else self._active_services
+
+        if target_services:
+            self.logger.info(f"Starting services: {', '.join(target_services)}")
+        else:
+            self.logger.info("Starting all services")
+
+        self._docker.up(services=target_services or None, wait=wait)
+
+        if wait:
+            self.logger.info("Services are ready")
+
+        return self
+
+    def down(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
+        """Stop and remove services in the stack.
+
+        Args:
+            services: Optional list of specific services to stop and remove
+            volumes: Whether to remove named volumes
+
+        Returns:
+            Self for method chaining
+        """
+        target_services = services if services is not None else self._active_services
+
+        if target_services:
+            self.logger.info(
+                f"Stopping and removing services: {', '.join(target_services)}"
+            )
+        else:
+            self.logger.info("Stopping and removing all services")
+
+        self._docker.down(
+            services=target_services if target_services else None, volumes=volumes
+        )
+
+        return self
+
+    def stop(self, services: list[str] | None = None) -> "Stack":
+        """Stop services without removing them.
+
+        Args:
+            services: Optional list of specific services to stop
+
+        Returns:
+            Self for method chaining
+        """
+        target_services = services if services is not None else self._active_services
+
+        if target_services:
+            self.logger.info(f"Stopping services: {', '.join(target_services)}")
+        else:
+            self.logger.info("Stopping all services")
+
+        self._docker.stop(services=target_services if target_services else None)
+
+        return self
+
+    def run(self, command: str, services: list[str] | None = None) -> None:
+        """Execute a command with services.
+
+        Args:
+            command: Command name to execute.
+            services: List of service names.
+        """
+        # Set active services for filtering
+        self._active_services = services or []
+
+        # Get and execute command handler
+        handler = self.commands.get(command)
+
+        if not handler:
+            available = self.commands.available_commands()
+            self.logger.error(f"Unknown command '{command}'")
+            if available:
+                self.logger.info(f"Available commands: {', '.join(available)}")
+            else:
+                self.logger.info(
+                    "No commands registered — did you forget @stack.commands.up?"
+                )
+            sys.exit(1)
+
+        before_hooks = self.commands.get_before_hooks(command)
+        after_hooks = self.commands.get_after_hooks(command)
+
+        try:
+            for hook in before_hooks:
+                hook()
+
+            main_error: BaseException | None = None
+            try:
+                handler()
+            except KeyboardInterrupt:
+                self.logger.warning("\nInterrupted by user")
+                sys.exit(130)
+            except Exception as e:
+                self.logger.error(f"Command failed: {e}")
+                self.logger.debug("Exception details:", exc_info=True)
+                main_error = e
+
+            for hook in after_hooks:
+                try:
+                    hook()
+                except Exception as e:
+                    self.logger.warning(f"After-hook failed: {e}")
+
+            if main_error is not None:
+                sys.exit(1)
+
+        except SystemExit:
+            raise
+        except KeyboardInterrupt:
+            self.logger.warning("\nInterrupted by user")
+            sys.exit(130)

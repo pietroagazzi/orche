@@ -62,4 +62,7 @@ docker-compose.override.yml
 
 # Project specific
 .claude/
-.whaler/
+.orche/
+
+# MkDocs
+site

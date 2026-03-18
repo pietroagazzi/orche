@@ -1,7 +1,7 @@
 [project]
-name = "whaler"
-version = "0.1.0"
-description = "A Python orchestrator for Docker Compose stacks"
+name = "orche"
+version = "0.4.2"
+description = "A simple, lightweight Python orchestrator for Docker Compose stacks"
 authors = [
     {name = "Pietro Agazzi", email = "pietro.agazzi@prconsulting.eu"}
 ]
@@ -10,17 +10,20 @@ requires-python = ">=3.10,<4"
 dependencies = [
     "python-on-whales>=0.80.0,<0.81.0",
     "rich>=13.0.0",
-    "python-dotenv>=1.0.0",
     "PyYAML>=6.0",
-    "types-pyyaml (>=6.0.12.20250915,<7.0.0.0)",
     "GitPython>=3.1.0",
-    "types-pygments[dev] (>=2.19.0.20251121,<3.0.0.0)",
+    "click>=8.1.0",
 ]
 
 [project.scripts]
-whaler = "whaler.cli:main"
+orche = "orche.cli:main"
 
 [project.optional-dependencies]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-timeout>=2.3.0",
@@ -29,22 +32,20 @@ dev = [
     "mypy>=1.8.0",
     "ruff>=0.2.0",
     "types-PyYAML>=6.0",
+    "types-pygments>=2.19.0",
+    "pre-commit>=4.0.0",
 ]
 
 [tool.poetry]
-packages = [{include = "whaler"}]
+packages = [{include = "orche"}]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
-# [tool.pytest.ini_options]
-# minversion = "8.0"
-# addopts = "-ra -q --timeout=300"
-# testpaths = [
-#     "tests",
-# ]
-# pythonpath = ["src"]
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q --timeout=300"
 
 [tool.ruff]
 line-length = 88
@@ -60,4 +61,4 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
-files = ["whaler", "tests"]
+files = ["orche", "tests"]
