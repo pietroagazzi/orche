@@ -19,12 +19,10 @@ stack = Stack(
 # Register the 'up' command
 @stack.commands.up
 def up() -> None:
-    # Conditional logic per service
     if stack.on("postgres"):
         print("Postgres is included")
 
-    stack.build()
-    stack.up()
+    stack.build().up()
 
 
 # Register the 'down' command
