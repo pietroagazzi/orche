@@ -1,11 +1,11 @@
 """Main Stack class for orchestrating Docker Compose stacks."""
 
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
 from .docker import DockerComposeWrapper
+from .exceptions import CommandError, ConfigError, HookError
 from .logger import get_logger
 
 BuiltinCommandType = Literal["up", "build", "down", "stop"]
@@ -116,8 +116,7 @@ class Stack:
                           Cannot be an empty list.
 
         Raises:
-            ValueError: If compose_files is an empty list
-            FileNotFoundError: If any compose file does not exist
+            ConfigError: If compose_files is empty or files do not exist
         """
         self.project_path: Path = Path(path).resolve()
         self.project_name = name
@@ -127,7 +126,7 @@ class Stack:
             ["docker-compose.yml"] if compose_files is None else compose_files
         )
         if not compose_file_inputs:
-            raise ValueError(
+            raise ConfigError(
                 "compose_files cannot be an empty list. "
                 "Either omit the parameter to use the default ['docker-compose.yml'], "
                 "or provide at least one compose file path."
@@ -142,7 +141,7 @@ class Stack:
         missing_files = [cf for cf in self.compose_files if not cf.exists()]
         if missing_files:
             files_str = "\n  ".join(str(f) for f in missing_files)
-            raise FileNotFoundError(
+            raise ConfigError(
                 f"Docker Compose file(s) not found:\n  {files_str}\n"
                 f"Please ensure the file(s) exist or provide the correct path(s)."
             )
@@ -276,58 +275,59 @@ class Stack:
         return self
 
     def run(self, command: str, services: list[str] | None = None) -> None:
-        """Execute a command with services.
+        """Execute a command with before/after hooks.
+
+        Execution order:
+            1. Before-hooks run sequentially. First failure raises
+               ``HookError`` and aborts (remaining hooks and handler are skipped).
+            2. Main handler runs only if all before-hooks succeeded.
+               Failures raise ``CommandError``; ``KeyboardInterrupt`` propagates.
+            3. After-hooks run sequentially. First failure raises
+               ``HookError`` and aborts (remaining after-hooks are skipped).
 
         Args:
             command: Command name to execute.
             services: List of service names.
+
+        Raises:
+            CommandError: If the command is not registered or the handler fails.
+            HookError: If a before- or after-hook fails.
         """
-        # Set active services for filtering
         self._active_services = services or []
 
-        # Get and execute command handler
         handler = self.commands.get(command)
-
         if not handler:
             available = self.commands.available_commands()
-            self.logger.error(f"Unknown command '{command}'")
-            if available:
-                self.logger.info(f"Available commands: {', '.join(available)}")
-            else:
-                self.logger.info(
-                    "No commands registered — did you forget @stack.commands.up?"
-                )
-            sys.exit(1)
+            hint = (
+                f" Available: {', '.join(available)}"
+                if available
+                else " No commands registered — did you forget @stack.commands.up?"
+            )
+            raise CommandError(f"Unknown command '{command}'.{hint}")
 
         before_hooks = self.commands.get_before_hooks(command)
         after_hooks = self.commands.get_after_hooks(command)
 
-        try:
-            for hook in before_hooks:
-                hook()
-
-            main_error: BaseException | None = None
+        # Before-hooks
+        for hook in before_hooks:
             try:
-                handler()
-            except KeyboardInterrupt:
-                self.logger.warning("\nInterrupted by user")
-                sys.exit(130)
+                hook()
             except Exception as e:
-                self.logger.error(f"Command failed: {e}")
-                self.logger.debug("Exception details:", exc_info=True)
-                main_error = e
+                raise HookError("before", command, e) from e
 
-            for hook in after_hooks:
-                try:
-                    hook()
-                except Exception as e:
-                    self.logger.warning(f"After-hook failed: {e}")
+        # Main handler
+        try:
+            handler()
+        except Exception as e:
+            raise CommandError(f"Command '{command}' failed: {e}") from e
 
-            if main_error is not None:
-                sys.exit(1)
+        # After-hooks
+        for hook in after_hooks:
+            try:
+                hook()
+            except Exception as e:
+                raise HookError("after", command, e) from e
 
-        except SystemExit:
-            raise
-        except KeyboardInterrupt:
-            self.logger.warning("\nInterrupted by user")
-            sys.exit(130)
+    def client(self) -> DockerComposeWrapper:
+        """Get the underlying DockerComposeWrapper instance."""
+        return self._docker

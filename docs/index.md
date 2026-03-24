@@ -24,8 +24,7 @@ stack = Stack(compose_files=["docker-compose.yml"])
 
 @stack.commands.up
 def up() -> None:
-    stack.build()
-    stack.up()
+    stack.build().up()
 
 @stack.commands.down
 def down() -> None:
@@ -36,11 +35,3 @@ def down() -> None:
 orche up
 orche down
 ```
-
-## Key Features
-
-- **Imperative orchestration** — plain Python, no YAML DSL
-- **Service filtering** — `stack.on("service")` targets specific services
-- **Pre/post hooks** — run code before or after any command
-- **Custom commands** — extend beyond `up`, `build`, `down`, `stop`
-- **Docker Compose integration** — wraps `docker compose` with full flag support

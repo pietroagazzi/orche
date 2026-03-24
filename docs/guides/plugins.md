@@ -1,4 +1,4 @@
-# Plugins & Custom Commands
+# Custom Commands
 
 You can register commands beyond the built-in `up`, `build`, `down`, `stop` using `stack.commands.register()`.
 
@@ -12,8 +12,7 @@ stack = Stack(compose_files=["docker-compose.yml"])
 
 @stack.commands.register("deploy")
 def deploy() -> None:
-    stack.build()
-    stack.up()
+    stack.build().up()
     print("Deployed successfully")
 ```
 
@@ -25,22 +24,30 @@ orche deploy
 
 ## Combining with Hooks
 
-Custom commands support the same before/after hooks:
+Save the handle returned by `register()` to attach before/after hooks:
 
 ```python
-@stack.commands.register("deploy").before
+deploy = stack.commands.register("deploy")
+
+
+@deploy.before
 def pre_deploy() -> None:
     print("Starting deployment pipeline...")
 
-@stack.commands.register("deploy")
-def deploy() -> None:
-    stack.build()
-    stack.up()
 
-@stack.commands.register("deploy").after
+@deploy
+def deploy_handler() -> None:
+    stack.build().up()
+
+
+@deploy.after
 def post_deploy() -> None:
     send_notification("Deployment done")
 ```
+
+!!! note
+    Built-in command properties like `stack.commands.up` are shortcuts for `stack.commands.register("up")`.
+    They return the same `CommandHandle` and support the same `.before` / `.after` decorators.
 
 ## Listing Available Commands
 
