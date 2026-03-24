@@ -6,7 +6,7 @@ from pathlib import Path
 
 from python_on_whales import DockerClient, DockerException
 
-from .exceptions import DockerComposeError
+from .exceptions import ConfigError, DockerComposeError
 
 
 class DockerComposeWrapper:
@@ -27,10 +27,10 @@ class DockerComposeWrapper:
             project_path: Optional project path
 
         Raises:
-            ValueError: If compose_files is empty
+            ConfigError: If compose_files is empty
         """
         if not compose_files:
-            raise ValueError(
+            raise ConfigError(
                 "compose_files cannot be empty. At least one compose file is required."
             )
 
