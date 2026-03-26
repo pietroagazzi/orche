@@ -1,6 +1,6 @@
 [project]
 name = "orche"
-version = "0.4.3"
+version = "0.4.4"
 description = "A simple, lightweight Python orchestrator for Docker Compose stacks"
 authors = [
     {name = "Pietro Agazzi", email = "pietro.agazzi@prconsulting.eu"}
