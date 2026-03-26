@@ -57,41 +57,47 @@ def import_orchefile(orchefile_path: Path) -> Stack:
     Raises:
         OrchefileError: If orchefile cannot be loaded or is invalid
     """
-    # Add orchefile directory to sys.path for local imports
     orchefile_dir = orchefile_path.parent.resolve()
-    if str(orchefile_dir) not in sys.path:
+    module_name = orchefile_path.stem
+
+    # Temporarily add orchefile directory to sys.path for local imports
+    added_to_path = str(orchefile_dir) not in sys.path
+    if added_to_path:
         sys.path.insert(0, str(orchefile_dir))
 
-    # Load module from file
-    module_name = orchefile_path.stem
-    spec = importlib.util.spec_from_file_location(module_name, orchefile_path)
-
-    if spec is None or spec.loader is None:
-        raise OrchefileError(f"Cannot load module from {orchefile_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-
     try:
-        spec.loader.exec_module(module)
-    except Exception as e:
-        raise OrchefileError(f"Failed to execute orchefile: {e}") from e
+        spec = importlib.util.spec_from_file_location(module_name, orchefile_path)
 
-    # Extract 'stack' variable (convention-based loading)
-    if not hasattr(module, "stack"):
-        raise OrchefileError(
-            f"Orchefile {orchefile_path} must define a 'stack' variable.\n"
-            f"Example: stack = Stack(name='my-stack', "
-            "compose_files=['docker-compose.yml'])"
-        )
+        if spec is None or spec.loader is None:
+            raise OrchefileError(f"Cannot load module from {orchefile_path}")
 
-    stack = module.stack
-    if not isinstance(stack, Stack):
-        raise OrchefileError(
-            f"'stack' variable must be a Stack instance, got {type(stack).__name__}"
-        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
 
-    return stack
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            raise OrchefileError(f"Failed to execute orchefile: {e}") from e
+
+        # Extract 'stack' variable (convention-based loading)
+        if not hasattr(module, "stack"):
+            raise OrchefileError(
+                f"Orchefile {orchefile_path} must define a 'stack' variable.\n"
+                f"Example: stack = Stack(name='my-stack', "
+                "compose_files=['docker-compose.yml'])"
+            )
+
+        stack = module.stack
+        if not isinstance(stack, Stack):
+            raise OrchefileError(
+                f"'stack' variable must be a Stack instance, got {type(stack).__name__}"
+            )
+
+        return stack
+    finally:
+        if added_to_path and str(orchefile_dir) in sys.path:
+            sys.path.remove(str(orchefile_dir))
+        sys.modules.pop(module_name, None)
 
 
 @click.command(
