@@ -13,8 +13,6 @@ def pre_up() -> None:
 
 ## After Hook
 
-After-hooks always run, even if the main command fails.
-
 ```python
 @stack.commands.up.after
 def post_up() -> None:
@@ -37,8 +35,7 @@ def pre_up() -> None:
 
 @stack.commands.up
 def up() -> None:
-    stack.build()
-    stack.up()
+    stack.build().up()
 
 
 @stack.commands.up.after
@@ -53,6 +50,22 @@ orche up
 # Services are live.
 ```
 
+## Hooks on Custom Commands
+
+For commands registered via `register()`, save the handle and decorate from it:
+
+```python
+deploy = stack.commands.register("deploy")
+
+@deploy.before
+def check_env() -> None: ...
+
+@deploy
+def deploy_handler() -> None: ...
+```
+
+See [Custom Commands](plugins.md) for a full example.
+
 ## Multiple Hooks
 
 You can register multiple before/after hooks. They run in registration order.
@@ -64,8 +77,3 @@ def check_docker() -> None: ...
 @stack.commands.up.before
 def check_env() -> None: ...
 ```
-
-## Error Handling
-
-- Before-hook exceptions propagate and abort the command.
-- After-hook exceptions are logged as warnings and do **not** mask the main result.

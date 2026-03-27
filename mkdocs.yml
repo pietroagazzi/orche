@@ -37,7 +37,7 @@ nav:
     - Guides:
           - Service Filtering: guides/services.md
           - Hooks (Pre/Post): guides/hooks.md
-          - Plugins & Custom Commands: guides/plugins.md
+          - Custom Commands: guides/plugins.md
     - CLI Reference: cli-reference.md
     - API Reference:
           - Stack: api/stack.md

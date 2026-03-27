@@ -4,89 +4,55 @@
 
 A simple, lightweight Python orchestrator for Docker Compose stacks.
 
+Define your stack logic in an `orchefile.py`, register commands with decorators, and run everything through the `orche` CLI.
+
+> [!IMPORTANT]
+> Orche is a **thin orchestration layer** on top of Docker Compose.
+> It does not replace Docker — it coordinates what happens around it.
+
 ## Installation
 
 ```bash
-pip install -e .
+pip install orche
 ```
 
-## CLI Reference
+## Quick Start
 
-The `orche` command executes your `orchefile.py` file with the specified command and services.
-
-```bash
-orche [command] [services...]
-```
-
-### Commands
-
-- `orche up [services]` - Start services (executes orchefile.py with 'up' command)
-- `orche build [services]` - Build services (executes orchefile.py with 'build' command)
-- `orche down [services]` - Stop services (executes orchefile.py with 'down' command)
-
-### Options
-
-- `-f, --file FILE` - Path to orche file (default: orchefile.py)
-- `-v, --verbose` - Enable verbose logging
-- `--version` - Show version and exit
-- `--help` - Show help and exit
-
-### Examples
-
-```bash
-# Execute orchefile.py with up command
-orche up
-
-# Build specific services
-orche build api web
-
-# Start specific services
-orche up postgres redis
-
-# Use custom orche file
-orche -f custom.py up
-```
-
-## Examples
-
-### Basic Usage
-
-```python
-from orche import Stack
-
-stack = Stack(compose_files=["docker-compose.yml"])
-stack.build().up()
-```
-
-### With Project Name
+Create an `orchefile.py` in your project root:
 
 ```python
 from orche import Stack
 
 stack = Stack(
-    compose_files=["docker-compose.yml"],
     name="myapp",
-    path="/path/to/project"
+    compose_files=["docker-compose.yml"],
 )
 
-stack.build().up(wait=True)
+@stack.commands.up
+def up():
+    stack.build().up()
+
+@stack.commands.down
+def down():
+    stack.down(volumes=True)
 ```
 
-### Specific Services
+Then run:
 
-```python
-from orche import Stack
-
-stack = Stack(compose_files=["docker-compose.yml"])
-
-# Build specific services
-stack.build(["api", "web"])
-
-# Start specific services
-stack.up(["postgres", "redis"])
+```bash
+orche up
+orche down
 ```
 
-If your compose files live under another directory, pass `path` and keep `compose_files` relative to that directory.
+## Documentation
+
+Full documentation is available [here](https://pietroagazzi.github.io/orche/):
+
+- [Installation](https://pietroagazzi.github.io/orche/installation/)
+- [Quick Start](https://pietroagazzi.github.io/orche/quickstart/)
+- [CLI Reference](https://pietroagazzi.github.io/orche/cli-reference/)
+- **Guides:** [Hooks](https://pietroagazzi.github.io/orche/guides/hooks/) · [Services](https://pietroagazzi.github.io/orche/guides/services/)
+- **API:** [Stack](https://pietroagazzi.github.io/orche/api/stack/) · [Command Registry](https://pietroagazzi.github.io/orche/api/command-registry/) · [Built-in Utilities](https://pietroagazzi.github.io/orche/api/builtin/) · [Exceptions](https://pietroagazzi.github.io/orche/api/exceptions/)
 
 ## Requirements
 
@@ -95,26 +61,9 @@ If your compose files live under another directory, pass `path` and keep `compos
 
 ## Development
 
-Install development dependencies:
-
 ```bash
 pip install -e ".[dev]"
-```
-
-Run tests:
-
-```bash
 pytest
-```
-
-Type checking:
-
-```bash
 mypy orche
-```
-
-Linting:
-
-```bash
 ruff check orche
 ```

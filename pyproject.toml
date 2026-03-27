@@ -1,19 +1,39 @@
 [project]
 name = "orche"
-version = "0.4.2"
+version = "0.4.4"
 description = "A simple, lightweight Python orchestrator for Docker Compose stacks"
 authors = [
     {name = "Pietro Agazzi", email = "pietro.agazzi@prconsulting.eu"}
 ]
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10,<4"
+keywords = ["docker", "docker-compose", "orchestration", "devops", "containers"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
 dependencies = [
-    "python-on-whales>=0.80.0,<0.81.0",
+    "python-on-whales>=0.80.0,<1.0.0",
     "rich>=13.0.0",
     "PyYAML>=6.0",
     "GitPython>=3.1.0",
     "click>=8.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/pietroagazzi/orche"
+Repository = "https://github.com/pietroagazzi/orche"
+Documentation = "https://pietroagazzi.github.io/orche"
+Issues = "https://github.com/pietroagazzi/orche/issues"
 
 [project.scripts]
 orche = "orche.cli:main"
