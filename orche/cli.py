@@ -115,9 +115,9 @@ def import_orchefile(orchefile_path: Path) -> Stack:
     type=click.Path(dir_okay=False, path_type=Path),
     help="Path to orchefile (default: orchefile.py)",
 )
-@click.option("-v", "--verbose", is_flag=True, help="Enable verbose/debug logging")
+@click.option("--debug", is_flag=True, help="Enable debug logging")
 @click.version_option(version=__version__, prog_name="orche")
-def main(command: str, services: tuple[str, ...], file: Path, verbose: bool) -> None:
+def main(command: str, services: tuple[str, ...], file: Path, debug: bool) -> None:
     """Orche - Docker Compose Stack Orchestrator
 
     Execute commands defined in your orchefile.py with Docker Compose.
@@ -125,7 +125,7 @@ def main(command: str, services: tuple[str, ...], file: Path, verbose: bool) -> 
     error_console = Console(stderr=True)
 
     # Setup logging
-    setup_logger(verbose=verbose)
+    setup_logger(debug=debug)
 
     # Find and import orchefile
     try:
@@ -133,7 +133,7 @@ def main(command: str, services: tuple[str, ...], file: Path, verbose: bool) -> 
         stack = import_orchefile(orchefile)
     except OrchefileError as e:
         error_console.print(f"[red]Error: {e}[/red]")
-        if verbose:
+        if debug:
             error_console.print_exception()
         sys.exit(1)
 
@@ -145,7 +145,7 @@ def main(command: str, services: tuple[str, ...], file: Path, verbose: bool) -> 
         sys.exit(1)
     except OrcheError as e:
         error_console.print(f"[red]Error: {e}[/red]")
-        if verbose:
+        if debug:
             error_console.print_exception()
         sys.exit(1)
     except KeyboardInterrupt:
@@ -153,7 +153,7 @@ def main(command: str, services: tuple[str, ...], file: Path, verbose: bool) -> 
         sys.exit(130)
     except Exception as e:
         error_console.print(f"[red]Unexpected error: {e}[/red]")
-        if verbose:
+        if debug:
             error_console.print_exception()
         sys.exit(1)
 

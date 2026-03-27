@@ -12,13 +12,13 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 def setup_logger(
     name: str | None = None,
-    verbose: bool = False,
+    debug: bool = False,
 ) -> logging.Logger:
     """Setup and configure logger.
 
     Args:
         name: Logger name (None for root logger)
-        verbose: Whether to enable verbose logging to console
+        debug: Whether to enable debug logging to console
 
     Returns:
         Configured logger instance
@@ -52,8 +52,8 @@ def setup_logger(
     except OSError:
         logger.addHandler(logging.NullHandler())
 
-    # Console handler in verbose mode
-    if verbose:
+    # Console handler in debug mode
+    if debug:
         console_handler = RichHandler(
             rich_tracebacks=True,
             show_time=True,

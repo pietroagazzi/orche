@@ -34,20 +34,18 @@ class TestSetupLogger:
         assert len(file_handlers) == 1
         logger.handlers.clear()
 
-    def test_verbose_adds_console_handler(
-        self, tmp_path: Path, monkeypatch: Any
-    ) -> None:
+    def test_debug_adds_console_handler(self, tmp_path: Path, monkeypatch: Any) -> None:
         monkeypatch.chdir(tmp_path)
-        logger = setup_logger(name="test_verbose", verbose=True)
+        logger = setup_logger(name="test_debug", debug=True)
         rich_handlers = [h for h in logger.handlers if isinstance(h, RichHandler)]
         assert len(rich_handlers) == 1
         logger.handlers.clear()
 
-    def test_not_verbose_no_console_handler(
+    def test_not_debug_no_console_handler(
         self, tmp_path: Path, monkeypatch: Any
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        logger = setup_logger(name="test_not_verbose", verbose=False)
+        logger = setup_logger(name="test_not_debug", debug=False)
         rich_handlers = [h for h in logger.handlers if isinstance(h, RichHandler)]
         assert len(rich_handlers) == 0
         logger.handlers.clear()

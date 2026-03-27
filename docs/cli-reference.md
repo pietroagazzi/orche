@@ -18,7 +18,7 @@ orche [OPTIONS] COMMAND [SERVICES]...
 | Option            | Description                                 |
 | ----------------- | ------------------------------------------- |
 | `-f, --file PATH` | Path to orchefile (default: `orchefile.py`) |
-| `-v, --verbose`   | Enable debug logging                        |
+| `-d, ----debug`   | Enable debug logging                        |
 | `--version`       | Show version and exit                       |
 | `--help`          | Show help and exit                          |
 
@@ -34,8 +34,8 @@ orche up api postgres
 # Use a custom orchefile
 orche -f deploy/orchefile.py up
 
-# Verbose output
-orche -v up
+# Enable debug logging
+orche --debug up
 
 # Custom command defined in orchefile
 orche deploy
