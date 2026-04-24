@@ -26,3 +26,13 @@ repos:
                 - PyYAML>=6.0
                 - rich>=13.0.0
                 - python-on-whales>=0.80.0
+
+    - repo: local
+      hooks:
+          - id: pytest
+            name: Run tests
+            entry: uv run pytest
+            language: system
+            pass_filenames: false
+            always_run: true
+            stages: [pre-push]
