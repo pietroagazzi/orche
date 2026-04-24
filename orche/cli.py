@@ -100,10 +100,59 @@ def import_orchefile(orchefile_path: Path) -> Stack:
         sys.modules.pop(module_name, None)
 
 
+def _parse_chained(
+    command: str, services: tuple[str, ...]
+) -> list[tuple[str, list[str]]]:
+    """Split a flat token list into chained (command, services) pairs.
+
+    Commas act as separators between invocations, either standalone (`` , ``)
+    or attached to the preceding token (``build,``).
+
+    Empty groups produced by leading, trailing, or consecutive commas are
+    silently filtered out. As a result, degenerate inputs such as ``orche ,``
+    or ``orche ,,`` produce an empty list and no commands are executed. The
+    caller is responsible for warning the user when the returned list is empty.
+
+    Examples::
+
+        _parse_chained("build,", ("up", "web"))
+        # → [("build", []), ("up", ["web"])]
+
+        _parse_chained("up", ("web,", "build"))
+        # → [("up", ["web"]), ("build", [])]
+
+        _parse_chained(",", ("up",))
+        # → [("up", [])]  leading comma is dropped, "up" still runs
+
+        _parse_chained(",", (",",))
+        # → []  all tokens are commas, nothing to run
+    """
+    tokens = [command, *services]
+    groups: list[list[str]] = []
+    current: list[str] = []
+
+    for token in tokens:
+        if token == ",":
+            groups.append(current)
+            current = []
+        elif token.endswith(","):
+            current.append(token[:-1])
+            groups.append(current)
+            current = []
+        else:
+            current.append(token)
+
+    if current:
+        groups.append(current)
+
+    return [(g[0], g[1:]) for g in groups if g]
+
+
 @click.command(
     epilog=(
         "Built-in commands: up, build, down, stop. "
-        "Custom commands defined in orchefile.py."
+        "Custom commands defined in orchefile.py. "
+        "Chain multiple commands with commas: orche build, up web."
     )
 )
 @click.argument("command")
@@ -137,25 +186,33 @@ def main(command: str, services: tuple[str, ...], file: Path, debug: bool) -> No
             error_console.print_exception()
         sys.exit(1)
 
-    # Execute command through stack
-    try:
-        stack.run(command=command, services=list(services))
-    except CommandError as e:
-        error_console.print(f"[red]Error: {e}[/red]")
+    # Execute each chained invocation sequentially; stop on first failure
+    invocations = _parse_chained(command, services)
+    if not invocations:
+        error_console.print(
+            "[yellow]Warning: no commands to run — all tokens were commas. "
+            "Did you mean to chain commands, e.g. `orche build, up`?[/yellow]"
+        )
         sys.exit(1)
-    except OrcheError as e:
-        error_console.print(f"[red]Error: {e}[/red]")
-        if debug:
-            error_console.print_exception()
-        sys.exit(1)
-    except KeyboardInterrupt:
-        error_console.print("\n[yellow]Interrupted by user[/yellow]")
-        sys.exit(130)
-    except Exception as e:
-        error_console.print(f"[red]Unexpected error: {e}[/red]")
-        if debug:
-            error_console.print_exception()
-        sys.exit(1)
+    for cmd, svcs in invocations:
+        try:
+            stack.run(command=cmd, services=svcs)
+        except CommandError as e:
+            error_console.print(f"[red]Error: {e}[/red]")
+            sys.exit(1)
+        except OrcheError as e:
+            error_console.print(f"[red]Error: {e}[/red]")
+            if debug:
+                error_console.print_exception()
+            sys.exit(1)
+        except KeyboardInterrupt:
+            error_console.print("\n[yellow]Interrupted by user[/yellow]")
+            sys.exit(130)
+        except Exception as e:
+            error_console.print(f"[red]Unexpected error: {e}[/red]")
+            if debug:
+                error_console.print_exception()
+            sys.exit(1)
 
 
 if __name__ == "__main__":

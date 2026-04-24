@@ -7,6 +7,7 @@ from pathlib import Path
 from python_on_whales import DockerClient, DockerException
 
 from .exceptions import ConfigError, DockerComposeError
+from .logger import get_console, get_logger
 
 
 class DockerComposeWrapper:
@@ -52,6 +53,13 @@ class DockerComposeWrapper:
             compose_project_directory=str(self.project_path),
         ).compose
 
+        self.logger = get_logger("orche.docker")
+
+    def _notice(self, command: str) -> None:
+        """Emit a user-visible notice and an internal debug log for a docker command."""
+        get_console().print(f"  [dim]$ {command}[/dim]")
+        self.logger.debug("Invoking: %s", command)
+
     def build(self, services: list[str] | None = None) -> None:
         """Build services defined in compose file.
 
@@ -61,6 +69,10 @@ class DockerComposeWrapper:
         Raises:
             DockerComposeError: If build command fails
         """
+        parts = ["docker", "compose", "build"]
+        if services:
+            parts.extend(services)
+        self._notice(" ".join(parts))
         try:
             self.compose.build(services=services)
         except DockerException as e:
@@ -84,6 +96,14 @@ class DockerComposeWrapper:
         Raises:
             DockerComposeError: If up command fails
         """
+        parts = ["docker", "compose", "up"]
+        if detach:
+            parts.append("--detach")
+        if wait:
+            parts.append("--wait")
+        if services:
+            parts.extend(services)
+        self._notice(" ".join(parts))
         try:
             self.compose.up(services=services, detach=detach, wait=wait)
         except DockerException as e:
@@ -109,9 +129,24 @@ class DockerComposeWrapper:
         """
         try:
             if services:
+                stop_parts = ["docker", "compose", "stop", *services]
+                self._notice(" ".join(stop_parts))
                 self.compose.stop(services)
+                rm_parts = [
+                    "docker",
+                    "compose",
+                    "rm",
+                    "--stop",
+                    *(["--volumes"] if volumes else []),
+                    *services,
+                ]
+                self._notice(" ".join(rm_parts))
                 self.compose.rm(services, stop=True, volumes=volumes)
             else:
+                down_parts = ["docker", "compose", "down", "--remove-orphans"]
+                if volumes:
+                    down_parts.append("--volumes")
+                self._notice(" ".join(down_parts))
                 self.compose.down(remove_orphans=remove_orphans, volumes=volumes)
         except DockerException as e:
             raise DockerComposeError(f"Failed to stop services: {e}") from e
@@ -127,9 +162,21 @@ class DockerComposeWrapper:
         Raises:
             DockerComposeError: If stop command fails
         """
+        parts = ["docker", "compose", "stop"]
+        if services:
+            parts.extend(services)
+        self._notice(" ".join(parts))
         try:
             self.compose.stop(services=services)
         except DockerException as e:
             raise DockerComposeError(f"Failed to stop services: {e}") from e
         except Exception as e:
             raise DockerComposeError(f"Unexpected error during stop: {e}") from e
+
+    def ps(self) -> list:
+        """Return running containers for this compose project."""
+        try:
+            return self.compose.ps()
+        except Exception as e:
+            self.logger.debug("ps() failed: %s", e)
+            return []

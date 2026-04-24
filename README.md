@@ -42,6 +42,9 @@ Then run:
 ```bash
 orche up
 orche down
+
+# Chain commands with commas
+orche build, up
 ```
 
 ## Documentation

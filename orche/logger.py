@@ -5,7 +5,10 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Literal
 
+from rich.console import Console
 from rich.logging import RichHandler
+
+_console = Console()
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -52,16 +55,15 @@ def setup_logger(
     except OSError:
         logger.addHandler(logging.NullHandler())
 
-    # Console handler in debug mode
-    if debug:
-        console_handler = RichHandler(
-            rich_tracebacks=True,
-            show_time=True,
-            show_path=False,
-            markup=True,
-        )
-        console_handler.setLevel(logging.DEBUG)
-        logger.addHandler(console_handler)
+    # Console handler — always show WARNING+, or DEBUG when debug=True
+    console_handler = RichHandler(
+        rich_tracebacks=True,
+        show_time=True,
+        show_path=False,
+        markup=True,
+    )
+    console_handler.setLevel(logging.DEBUG if debug else logging.WARNING)
+    logger.addHandler(console_handler)
 
     return logger
 
@@ -76,3 +78,8 @@ def get_logger(name: str = "orche") -> logging.Logger:
         Logger instance
     """
     return logging.getLogger(name)
+
+
+def get_console() -> Console:
+    """Return the shared Rich console for user-facing output (stdout)."""
+    return _console
