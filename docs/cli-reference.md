@@ -3,7 +3,7 @@
 ## Synopsis
 
 ```
-orche [OPTIONS] COMMAND [SERVICES]...
+orche [OPTIONS] COMMAND[,] [SERVICES]... [, COMMAND [SERVICES]...]...
 ```
 
 ## Arguments
@@ -18,9 +18,33 @@ orche [OPTIONS] COMMAND [SERVICES]...
 | Option            | Description                                 |
 | ----------------- | ------------------------------------------- |
 | `-f, --file PATH` | Path to orchefile (default: `orchefile.py`) |
-| `-d, ----debug`   | Enable debug logging                        |
+| `--debug`         | Enable debug logging                        |
 | `--version`       | Show version and exit                       |
 | `--help`          | Show help and exit                          |
+
+## Command Chaining
+
+Multiple commands can be run sequentially in a single invocation by separating
+them with commas. The orchefile is loaded once and commands execute in order —
+if any command fails, execution stops immediately.
+
+Two equivalent syntaxes are supported:
+
+```bash
+# Trailing comma attached to the preceding token
+orche build, up web
+
+# Standalone comma
+orche build , up web
+```
+
+The comma marks the end of the current command's argument list, so services
+bind to the command that precedes the separator:
+
+```
+orche up web db, build api
+# 'up' runs for 'web' and 'db', then 'build' runs for 'api'
+```
 
 ## Examples
 
@@ -30,6 +54,12 @@ orche up
 
 # Run 'up' for specific services
 orche up api postgres
+
+# Build then start all services
+orche build, up
+
+# Build then start specific services
+orche build api, up api
 
 # Use a custom orchefile
 orche -f deploy/orchefile.py up

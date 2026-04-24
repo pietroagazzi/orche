@@ -1,12 +1,36 @@
 """Main Stack class for orchestrating Docker Compose stacks."""
 
+import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
+from rich.panel import Panel
+from rich.table import Table
+
 from .docker import DockerComposeWrapper
 from .exceptions import CommandError, ConfigError, HookError
-from .logger import get_logger
+from .logger import get_console, get_logger
+
+
+def _get_local_ip() -> str:
+    """Return the local outbound IPv4 address.
+
+    Opens a UDP socket toward 8.8.8.8:80 (no packet is actually sent) to let
+    the OS select the correct network interface, then reads the bound address.
+    Falls back to `127.0.0.1` if the network is unavailable.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip: str = s.getsockname()[0]
+        return ip
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
 
 BuiltinCommandType = Literal["up", "build", "down", "stop"]
 
@@ -331,3 +355,51 @@ class Stack:
     def client(self) -> DockerComposeWrapper:
         """Get the underlying DockerComposeWrapper instance."""
         return self._docker
+
+    def print_services_summary(self) -> None:
+        """Print a Rich panel listing running services and their local URLs."""
+        containers = self._docker.ps()
+        if not containers:
+            return
+
+        local_ip = _get_local_ip()
+        console = get_console()
+
+        table = Table(
+            show_header=True, header_style="bold cyan", box=None, padding=(0, 2)
+        )
+        table.add_column("Service", style="bold green")
+        table.add_column("Container Port", style="yellow")
+        table.add_column("URL", style="blue")
+
+        seen: set[tuple[str, str, str]] = set()
+        rows_added = False
+        for container in containers:
+            service = container.config.labels.get(
+                "com.docker.compose.service", container.name
+            )
+            ports: dict = container.network_settings.ports or {}
+            for container_port, bindings in ports.items():
+                if not bindings:
+                    continue
+                for binding in bindings:
+                    host_port = binding.get("HostPort", "")
+                    if not host_port:
+                        continue
+                    key = (service, container_port, host_port)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    port_number = container_port.split("/")[0]
+                    scheme = "https" if port_number == "443" else "http"
+                    table.add_row(
+                        service,
+                        container_port,
+                        f"{scheme}://{local_ip}:{host_port}",
+                    )
+                    rows_added = True
+
+        if rows_added:
+            console.print(
+                Panel(table, title="[bold]Services[/bold]", border_style="cyan")
+            )

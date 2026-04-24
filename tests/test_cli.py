@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from orche.cli import find_or_validate_orchefile, main
+from orche.cli import _parse_chained, find_or_validate_orchefile, main
 from orche.exceptions import CommandError, HookError, OrcheError, OrchefileError
 
 
@@ -89,6 +89,81 @@ class TestMainCommand:
         mock_find.assert_called_once()
         call_arg = mock_find.call_args[0][0]
         assert str(call_arg) == "custom.py"
+
+
+class TestParseChained:
+    def test_single_command_no_services(self) -> None:
+        assert _parse_chained("build", ()) == [("build", [])]
+
+    def test_single_command_with_services(self) -> None:
+        assert _parse_chained("up", ("web", "db")) == [("up", ["web", "db"])]
+
+    def test_trailing_comma_on_command(self) -> None:
+        assert _parse_chained("build,", ("up", "web")) == [
+            ("build", []),
+            ("up", ["web"]),
+        ]
+
+    def test_trailing_comma_on_service(self) -> None:
+        assert _parse_chained("up", ("web,", "build")) == [
+            ("up", ["web"]),
+            ("build", []),
+        ]
+
+    def test_standalone_comma_separator(self) -> None:
+        assert _parse_chained("build", (",", "up", "web")) == [
+            ("build", []),
+            ("up", ["web"]),
+        ]
+
+    def test_three_chained_commands(self) -> None:
+        assert _parse_chained("build,", ("up,", "stop")) == [
+            ("build", []),
+            ("up", []),
+            ("stop", []),
+        ]
+
+    def test_services_on_multiple_commands(self) -> None:
+        assert _parse_chained("up", ("web", "db,", "build", "api")) == [
+            ("up", ["web", "db"]),
+            ("build", ["api"]),
+        ]
+
+
+class TestChainedExecution:
+    def test_executes_all_commands_in_order(
+        self, runner: CliRunner, mocker: Any
+    ) -> None:
+        mock_stack = mocker.MagicMock()
+        mocker.patch("orche.cli.find_or_validate_orchefile")
+        mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
+
+        result = runner.invoke(main, ["build,", "up", "web"])
+        assert result.exit_code == 0
+        assert mock_stack.run.call_count == 2
+        mock_stack.run.assert_any_call(command="build", services=[])
+        mock_stack.run.assert_any_call(command="up", services=["web"])
+
+    def test_stops_on_first_failure(self, runner: CliRunner, mocker: Any) -> None:
+        mock_stack = mocker.MagicMock()
+        mock_stack.run.side_effect = CommandError("build failed")
+        mocker.patch("orche.cli.find_or_validate_orchefile")
+        mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
+
+        result = runner.invoke(main, ["build,", "up"])
+        assert result.exit_code == 1
+        assert mock_stack.run.call_count == 1
+
+    def test_loads_orchefile_once_for_chain(
+        self, runner: CliRunner, mocker: Any
+    ) -> None:
+        mock_import = mocker.patch(
+            "orche.cli.import_orchefile", return_value=mocker.MagicMock()
+        )
+        mocker.patch("orche.cli.find_or_validate_orchefile")
+
+        runner.invoke(main, ["build,", "up,", "stop"])
+        assert mock_import.call_count == 1
 
 
 class TestFindOrValidateOrchefile:
