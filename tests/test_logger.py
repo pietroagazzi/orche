@@ -39,15 +39,17 @@ class TestSetupLogger:
         logger = setup_logger(name="test_debug", debug=True)
         rich_handlers = [h for h in logger.handlers if isinstance(h, RichHandler)]
         assert len(rich_handlers) == 1
+        assert rich_handlers[0].level == logging.DEBUG
         logger.handlers.clear()
 
-    def test_not_debug_no_console_handler(
+    def test_not_debug_console_handler_at_warning_level(
         self, tmp_path: Path, monkeypatch: Any
     ) -> None:
         monkeypatch.chdir(tmp_path)
         logger = setup_logger(name="test_not_debug", debug=False)
         rich_handlers = [h for h in logger.handlers if isinstance(h, RichHandler)]
-        assert len(rich_handlers) == 0
+        assert len(rich_handlers) == 1
+        assert rich_handlers[0].level == logging.WARNING
         logger.handlers.clear()
 
     def test_idempotent(self, tmp_path: Path, monkeypatch: Any) -> None:
