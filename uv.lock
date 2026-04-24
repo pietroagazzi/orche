@@ -817,7 +817,7 @@ wheels = [
 
 [[package]]
 name = "orche"
-version = "0.4.4"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
