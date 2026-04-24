@@ -57,7 +57,22 @@ orche up api
 orche down
 ```
 
-## 3. Next Steps
+## 3. Chain commands
+
+Separate multiple commands with commas to run them sequentially in one call:
+
+```bash
+# Build then start
+orche build, up
+
+# Build a specific service, then start everything
+orche build api, up
+```
+
+Execution stops at the first failure, so later commands only run if all
+earlier ones succeed.
+
+## 4. Next Steps
 
 - [Service Filtering](guides/services.md) — target specific services
 - [Hooks](guides/hooks.md) — run code before/after commands
