@@ -10,6 +10,10 @@ updates:
           day: "monday"
           time: "09:00"
       open-pull-requests-limit: 10
+      groups:
+          python-dependencies:
+              patterns:
+                  - "*"
       commit-message:
           prefix: "chore"
           include: "scope"
@@ -23,6 +27,10 @@ updates:
           day: "monday"
           time: "09:00"
       open-pull-requests-limit: 5
+      groups:
+          github-actions-dependencies:
+              patterns:
+                  - "*"
       labels:
           - "dependencies"
           - "github-actions"
