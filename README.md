@@ -1,6 +1,9 @@
 # Orche
 
 [![CI](https://github.com/pietroagazzi/orche/actions/workflows/ci.yml/badge.svg)](https://github.com/pietroagazzi/orche/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/orche)](https://pypi.org/project/orche/)
+[![Python](https://img.shields.io/pypi/pyversions/orche)](https://pypi.org/project/orche/)
+[![License](https://img.shields.io/github/license/pietroagazzi/orche)](LICENSE)
 
 A simple, lightweight Python orchestrator for Docker Compose stacks.
 
@@ -54,8 +57,8 @@ Full documentation is available [here](https://pietroagazzi.github.io/orche/):
 - [Installation](https://pietroagazzi.github.io/orche/installation/)
 - [Quick Start](https://pietroagazzi.github.io/orche/quickstart/)
 - [CLI Reference](https://pietroagazzi.github.io/orche/cli-reference/)
-- **Guides:** [Hooks](https://pietroagazzi.github.io/orche/guides/hooks/) · [Services](https://pietroagazzi.github.io/orche/guides/services/)
-- **API:** [Stack](https://pietroagazzi.github.io/orche/api/stack/) · [Command Registry](https://pietroagazzi.github.io/orche/api/command-registry/) · [Built-in Utilities](https://pietroagazzi.github.io/orche/api/builtin/) · [Exceptions](https://pietroagazzi.github.io/orche/api/exceptions/)
+- **Guides:** [Hooks](https://pietroagazzi.github.io/orche/guides/hooks/) \ [Services](https://pietroagazzi.github.io/orche/guides/services/)
+- **API:** [Stack](https://pietroagazzi.github.io/orche/api/stack/) \ [Command Registry](https://pietroagazzi.github.io/orche/api/command-registry/) \ [Built-in Utilities](https://pietroagazzi.github.io/orche/api/builtin/) \ [Exceptions](https://pietroagazzi.github.io/orche/api/exceptions/)
 
 ## Requirements
 
@@ -64,9 +67,11 @@ Full documentation is available [here](https://pietroagazzi.github.io/orche/):
 
 ## Development
 
+Orche uses [uv](https://docs.astral.sh/uv/) for dependency management.
+
 ```bash
-pip install -e ".[dev]"
-pytest
-mypy orche
-ruff check orche
+uv sync --extra dev
+uv run pytest
+uv run mypy orche
+uv run ruff check orche
 ```
