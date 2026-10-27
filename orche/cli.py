@@ -157,7 +157,7 @@ def _parse_chained(
 
 @click.command(
     epilog=(
-        "Built-in commands: up, build, down, stop. "
+        "Built-in commands: up, build, down, stop, rm. "
         "Custom commands defined in orchefile.py. "
         "Chain multiple commands with commas: orche build, up web."
     )

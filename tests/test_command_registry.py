@@ -106,6 +106,11 @@ class TestPropertyShortcuts:
         reg.down(_noop)
         assert reg.get("down") is _noop
 
+    def test_rm_registers_as_rm(self) -> None:
+        reg: CommandRegistry[Callable[[], None]] = CommandRegistry()
+        reg.rm(_noop)
+        assert reg.get("rm") is _noop
+
     def test_build_registers_as_build(self) -> None:
         reg: CommandRegistry[Callable[[], None]] = CommandRegistry()
         reg.build(_noop)

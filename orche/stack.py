@@ -38,7 +38,7 @@ def _get_local_ip() -> str:
         s.close()
 
 
-BuiltinCommandType = Literal["up", "build", "down", "stop"]
+BuiltinCommandType = Literal["up", "build", "down", "stop", "rm"]
 
 T = TypeVar("T", bound=Callable[[], None])
 
@@ -107,6 +107,11 @@ class CommandRegistry(Generic[T]):
     def stop(self) -> "CommandHandle[T]":
         """Decorator for the 'stop' command."""
         return self.register("stop")
+
+    @property
+    def rm(self) -> "CommandHandle[T]":
+        """Decorator for the 'rm' command."""
+        return self.register("rm")
 
     def get(self, name: str) -> Callable[[], None] | None:
         """Get a registered command handler."""
@@ -280,18 +285,45 @@ class Stack:
 
         return self
 
-    def down(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
-        """Stop and remove services in the stack.
+    def down(self, volumes: bool = False) -> "Stack":
+        """Stop and remove the whole stack, including its networks.
+
+        Like ``docker compose down``, this never targets specific services. Use
+        :meth:`rm` for that.
 
         Args:
-            services: Optional list of specific services to stop and remove
             volumes: Whether to remove named volumes
 
         Returns:
             Self for method chaining
+
+        Raises:
+            ConfigError: If services were selected on the command line
         """
-        target_services = self._resolve_services(services, "Stopping and removing")
-        self._docker.down(services=target_services, volumes=volumes)
+        if self._active_services:
+            raise ConfigError(
+                "'down' acts on the whole stack and does not accept services "
+                f"({', '.join(self._active_services)}). "
+                "Use 'rm' to remove specific services."
+            )
+        self.logger.info("Stopping and removing all services")
+        self._docker.down(volumes=volumes)
+        return self
+
+    def rm(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
+        """Stop and remove service containers, keeping networks and volumes.
+
+        If 'services' is not provided, uses the active services from CLI args.
+
+        Args:
+            services: Optional list of specific services to remove
+            volumes: Whether to remove anonymous volumes of the containers
+
+        Returns:
+            Self for method chaining
+        """
+        target_services = self._resolve_services(services, "Removing")
+        self._docker.rm(services=target_services, volumes=volumes)
         return self
 
     def stop(self, services: list[str] | None = None) -> "Stack":

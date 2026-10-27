@@ -12,10 +12,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   run in CI on Linux. They are deselected from the default test run.
 - `host` parameter on `Stack` to set the host used in the URLs printed by
   `print_services_summary`, instead of relying on network detection.
+- `rm` built-in command (`stack.commands.rm`, `Stack.rm()`) to stop and remove
+  specific services, matching `docker compose rm --stop`.
 - Python 3.13 support, tested in CI.
 
 ### Changed
 
+- **Breaking:** `Stack.down()` and `DockerComposeWrapper.down()` no longer take
+  `services`, matching `docker compose down`. `orche down <services>` now fails
+  with an error pointing to `rm`.
 - Consolidate Docker and stack operations.
 
 ### Fixed

@@ -98,6 +98,25 @@ class TestStackDelegation:
     def test_down_returns_self(self, stack: Stack) -> None:
         assert stack.down() is stack
 
+    def test_down_rejects_active_services(self, stack: Stack) -> None:
+        stack._active_services = ["web"]
+        with pytest.raises(ConfigError, match="Use 'rm'"):
+            stack.down()
+        stack._docker.down.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_rm_passes_explicit_services(self, stack: Stack) -> None:
+        stack.rm(services=["web"], volumes=True)
+        stack._docker.rm.assert_called_once_with(  # type: ignore[attr-defined]
+            services=["web"], volumes=True
+        )
+
+    def test_rm_uses_active_services(self, stack: Stack) -> None:
+        stack._active_services = ["db"]
+        assert stack.rm() is stack
+        stack._docker.rm.assert_called_once_with(  # type: ignore[attr-defined]
+            services=["db"], volumes=False
+        )
+
     def test_stop_delegates_to_docker(self, stack: Stack) -> None:
         stack.stop()
         stack._docker.stop.assert_called_once()  # type: ignore[attr-defined]

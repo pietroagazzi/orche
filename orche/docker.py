@@ -122,41 +122,52 @@ class DockerComposeWrapper:
 
     def down(
         self,
-        services: list[str] | None = None,
         remove_orphans: bool = True,
         volumes: bool = False,
     ) -> None:
-        """Stop and remove services.
+        """Stop and remove the whole project, including its networks.
+
+        Like ``docker compose down``, this always acts on the entire project.
+        Use :meth:`rm` to remove specific services.
 
         Args:
-            services: Optional list of specific services to stop and remove
             remove_orphans: Remove containers for services not in compose file
             volumes: Remove named volumes declared in the volumes section
 
         Raises:
             DockerComposeError: If down command fails
         """
+        parts = ["docker", "compose", "down"]
+        if remove_orphans:
+            parts.append("--remove-orphans")
+        if volumes:
+            parts.append("--volumes")
+        self._notice(" ".join(parts))
         with _translate_errors("Failed to stop services", "down"):
-            if services:
-                stop_parts = ["docker", "compose", "stop", *services]
-                self._notice(" ".join(stop_parts))
-                self.compose.stop(services)
-                rm_parts = [
-                    "docker",
-                    "compose",
-                    "rm",
-                    "--stop",
-                    *(["--volumes"] if volumes else []),
-                    *services,
-                ]
-                self._notice(" ".join(rm_parts))
-                self.compose.rm(services, stop=True, volumes=volumes)
-            else:
-                down_parts = ["docker", "compose", "down", "--remove-orphans"]
-                if volumes:
-                    down_parts.append("--volumes")
-                self._notice(" ".join(down_parts))
-                self.compose.down(remove_orphans=remove_orphans, volumes=volumes)
+            self.compose.down(remove_orphans=remove_orphans, volumes=volumes)
+
+    def rm(
+        self,
+        services: list[str] | None = None,
+        volumes: bool = False,
+    ) -> None:
+        """Stop and remove service containers, leaving networks in place.
+
+        Args:
+            services: Optional list of specific services to remove
+            volumes: Remove anonymous volumes attached to the containers
+
+        Raises:
+            DockerComposeError: If rm command fails
+        """
+        parts = ["docker", "compose", "rm", "--stop", "--force"]
+        if volumes:
+            parts.append("--volumes")
+        if services:
+            parts.extend(services)
+        self._notice(" ".join(parts))
+        with _translate_errors("Failed to remove services", "rm"):
+            self.compose.rm(services, stop=True, volumes=volumes)
 
     def stop(self, services: list[str] | None = None) -> None:
         """Stop services without removing them.

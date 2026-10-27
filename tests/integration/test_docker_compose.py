@@ -47,11 +47,12 @@ def test_stop_keeps_containers(real_stack: Stack) -> None:
     assert len(real_stack.client().compose.ps(all=True)) == 2
 
 
-def test_down_single_service_leaves_others(real_stack: Stack) -> None:
+def test_rm_single_service_leaves_others(real_stack: Stack) -> None:
     real_stack.up()
-    real_stack.down(services=["worker"])
+    real_stack.rm(services=["worker"])
 
     assert _running_services(real_stack) == {"web"}
+    assert len(real_stack.client().compose.ps(all=True)) == 1
 
 
 def test_unknown_service_raises_docker_error(real_stack: Stack) -> None:
