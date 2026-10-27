@@ -27,7 +27,12 @@ def _get_local_ip() -> str:
         s.connect(("8.8.8.8", 80))
         ip: str = s.getsockname()[0]
         return ip
-    except Exception:
+    except Exception as e:
+        get_logger().warning(
+            "Could not detect the local IP (%s); using 127.0.0.1. "
+            "Pass host=... to Stack to set it explicitly.",
+            e,
+        )
         return "127.0.0.1"
     finally:
         s.close()
@@ -128,6 +133,7 @@ class Stack:
         name: str | None = None,
         path: str | Path = ".",
         compose_files: list[str] | list[Path] | None = None,
+        host: str | None = None,
     ):
         """Initialize a Docker Compose stack.
 
@@ -139,12 +145,16 @@ class Stack:
                           Files are merged in order (later files override earlier ones).
                           Defaults to ["docker-compose.yml"] if None.
                           Cannot be an empty list.
+            host: Host name or IP used to build the URLs in
+                  ``print_services_summary``. When omitted, the local outbound
+                  IPv4 address is detected, falling back to ``127.0.0.1``.
 
         Raises:
             ConfigError: If compose_files is empty or files do not exist
         """
         self.project_path: Path = Path(path).resolve()
         self.project_name = name
+        self.host = host
         self.logger = get_logger()
 
         compose_file_inputs = (
@@ -361,7 +371,7 @@ class Stack:
         if not containers:
             return
 
-        local_ip = _get_local_ip()
+        host = self.host or _get_local_ip()
         console = get_console()
 
         table = Table(
@@ -393,7 +403,7 @@ class Stack:
                     table.add_row(
                         service,
                         container_port,
-                        f"{scheme}://{local_ip}:{host_port}",
+                        f"{scheme}://{host}:{host_port}",
                     )
 
         if table.row_count:

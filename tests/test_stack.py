@@ -338,3 +338,64 @@ class TestStackRun:
 
         stack.run("deploy")
         assert order == ["before", "handler", "after"]
+
+
+class TestServicesSummary:
+    @staticmethod
+    def _container(service: str, ports: dict[str, Any]) -> Any:
+        from unittest.mock import MagicMock
+
+        c = MagicMock()
+        c.name = service
+        c.config.labels = {"com.docker.compose.service": service}
+        c.network_settings.ports = ports
+        return c
+
+    def _urls(self, stack: Stack, mocker: Any) -> list[str]:
+        mocker.patch.object(
+            stack._docker,
+            "ps",
+            return_value=[
+                self._container("web", {"80/tcp": [{"HostPort": "8080"}]}),
+                self._container("tls", {"443/tcp": [{"HostPort": "8443"}]}),
+            ],
+        )
+        printed: list[Any] = []
+        mocker.patch(
+            "orche.stack.get_console"
+        ).return_value.print.side_effect = printed.append
+        stack.print_services_summary()
+        table = printed[0].renderable
+        return [str(cell) for cell in table.columns[2]._cells]
+
+    def test_explicit_host_is_used_without_detection(
+        self, make_stack: Any, mocker: Any
+    ) -> None:
+        detect = mocker.patch("orche.stack._get_local_ip")
+        stack = make_stack(host="myhost.local")
+
+        assert self._urls(stack, mocker) == [
+            "http://myhost.local:8080",
+            "https://myhost.local:8443",
+        ]
+        detect.assert_not_called()
+
+    def test_detected_ip_is_used_when_host_omitted(
+        self, stack: Stack, mocker: Any
+    ) -> None:
+        mocker.patch("orche.stack._get_local_ip", return_value="10.0.0.5")
+
+        assert self._urls(stack, mocker)[0] == "http://10.0.0.5:8080"
+
+
+class TestGetLocalIp:
+    def test_falls_back_to_loopback_and_warns(self, mocker: Any) -> None:
+        from orche.stack import _get_local_ip
+
+        sock = mocker.patch("orche.stack.socket.socket").return_value
+        sock.connect.side_effect = OSError("network unreachable")
+        warn = mocker.patch("orche.stack.get_logger").return_value.warning
+
+        assert _get_local_ip() == "127.0.0.1"
+        warn.assert_called_once()
+        sock.close.assert_called_once()

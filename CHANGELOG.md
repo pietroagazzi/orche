@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Integration tests against a real Docker daemon (`pytest -m integration`),
   run in CI on Linux. They are deselected from the default test run.
+- `host` parameter on `Stack` to set the host used in the URLs printed by
+  `print_services_summary`, instead of relying on network detection.
+- Python 3.13 support, tested in CI.
 
 ### Changed
 
@@ -17,6 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Keep the orchefile module in `sys.modules` and its directory on `sys.path`
+  after loading, so handlers can import the orchefile or sibling modules
+  lazily. A failed load still restores both.
+- Log a warning when the local IP cannot be detected and `127.0.0.1` is used,
+  instead of falling back silently.
 - Scope the active services to each `Stack.run()` call. They were previously
   left set after a run and shared between nested or concurrent runs.
 
