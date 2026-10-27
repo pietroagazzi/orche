@@ -206,6 +206,23 @@ class Stack:
         # Check if any service in the list is active (OR logic)
         return any(s in self._active_services for s in services)
 
+    def _resolve_services(
+        self, services: list[str] | None, action: str
+    ) -> list[str] | None:
+        """Pick explicit services or the CLI-active ones, and log the action.
+
+        Returns None when no services are targeted, which means "all services"
+        to the Docker wrapper.
+        """
+        target_services = services if services is not None else self._active_services
+
+        if target_services:
+            self.logger.info(f"{action} services: {', '.join(target_services)}")
+        else:
+            self.logger.info(f"{action} all services")
+
+        return target_services or None
+
     def build(self, services: list[str] | None = None) -> "Stack":
         """Build services in the stack.
 
@@ -217,14 +234,8 @@ class Stack:
         Returns:
             Self for method chaining
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(f"Building services: {', '.join(target_services)}")
-        else:
-            self.logger.info("Building all services")
-
-        self._docker.build(services=target_services if target_services else None)
+        target_services = self._resolve_services(services, "Building")
+        self._docker.build(services=target_services)
         return self
 
     def up(self, services: list[str] | None = None, wait: bool = True) -> "Stack":
@@ -239,14 +250,8 @@ class Stack:
         Returns:
             Self for method chaining
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(f"Starting services: {', '.join(target_services)}")
-        else:
-            self.logger.info("Starting all services")
-
-        self._docker.up(services=target_services or None, wait=wait)
+        target_services = self._resolve_services(services, "Starting")
+        self._docker.up(services=target_services, wait=wait)
 
         if wait:
             self.logger.info("Services are ready")
@@ -263,19 +268,8 @@ class Stack:
         Returns:
             Self for method chaining
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(
-                f"Stopping and removing services: {', '.join(target_services)}"
-            )
-        else:
-            self.logger.info("Stopping and removing all services")
-
-        self._docker.down(
-            services=target_services if target_services else None, volumes=volumes
-        )
-
+        target_services = self._resolve_services(services, "Stopping and removing")
+        self._docker.down(services=target_services, volumes=volumes)
         return self
 
     def stop(self, services: list[str] | None = None) -> "Stack":
@@ -287,15 +281,8 @@ class Stack:
         Returns:
             Self for method chaining
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(f"Stopping services: {', '.join(target_services)}")
-        else:
-            self.logger.info("Stopping all services")
-
-        self._docker.stop(services=target_services if target_services else None)
-
+        target_services = self._resolve_services(services, "Stopping")
+        self._docker.stop(services=target_services)
         return self
 
     def run(self, command: str, services: list[str] | None = None) -> None:
@@ -329,15 +316,8 @@ class Stack:
             )
             raise CommandError(f"Unknown command '{command}'.{hint}")
 
-        before_hooks = self.commands.get_before_hooks(command)
-        after_hooks = self.commands.get_after_hooks(command)
-
-        # Before-hooks
-        for hook in before_hooks:
-            try:
-                hook()
-            except Exception as e:
-                raise HookError("before", command, e) from e
+        for hook in self.commands.get_before_hooks(command):
+            self._run_hook("before", command, hook)
 
         # Main handler
         try:
@@ -345,12 +325,15 @@ class Stack:
         except Exception as e:
             raise CommandError(f"Command '{command}' failed: {e}") from e
 
-        # After-hooks
-        for hook in after_hooks:
-            try:
-                hook()
-            except Exception as e:
-                raise HookError("after", command, e) from e
+        for hook in self.commands.get_after_hooks(command):
+            self._run_hook("after", command, hook)
+
+    @staticmethod
+    def _run_hook(hook_type: str, command: str, hook: Callable[[], None]) -> None:
+        try:
+            hook()
+        except Exception as e:
+            raise HookError(hook_type, command, e) from e
 
     def client(self) -> DockerComposeWrapper:
         """Get the underlying DockerComposeWrapper instance."""
@@ -373,7 +356,6 @@ class Stack:
         table.add_column("URL", style="blue")
 
         seen: set[tuple[str, str, str]] = set()
-        rows_added = False
         for container in containers:
             service = container.config.labels.get(
                 "com.docker.compose.service", container.name
@@ -397,9 +379,8 @@ class Stack:
                         container_port,
                         f"{scheme}://{local_ip}:{host_port}",
                     )
-                    rows_added = True
 
-        if rows_added:
+        if table.row_count:
             console.print(
                 Panel(table, title="[bold]Services[/bold]", border_style="cyan")
             )

@@ -1,13 +1,30 @@
 """Docker abstraction layer for docker-compose operations."""
 
 import shutil
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 from python_on_whales import DockerClient, DockerException
 
 from .exceptions import ConfigError, DockerComposeError
 from .logger import get_console, get_logger
+
+
+@contextmanager
+def _translate_errors(failure: str, operation: str) -> Iterator[None]:
+    """Re-raise any error from a docker call as ``DockerComposeError``.
+
+    Args:
+        failure: Message prefix used for errors reported by Docker itself
+        operation: Operation name used for unexpected, non-Docker errors
+    """
+    try:
+        yield
+    except DockerException as e:
+        raise DockerComposeError(f"{failure}: {e}") from e
+    except Exception as e:
+        raise DockerComposeError(f"Unexpected error during {operation}: {e}") from e
 
 
 class DockerComposeWrapper:
@@ -73,12 +90,8 @@ class DockerComposeWrapper:
         if services:
             parts.extend(services)
         self._notice(" ".join(parts))
-        try:
+        with _translate_errors("Build failed", "build"):
             self.compose.build(services=services)
-        except DockerException as e:
-            raise DockerComposeError(f"Build failed: {e}") from e
-        except Exception as e:
-            raise DockerComposeError(f"Unexpected error during build: {e}") from e
 
     def up(
         self,
@@ -104,12 +117,8 @@ class DockerComposeWrapper:
         if services:
             parts.extend(services)
         self._notice(" ".join(parts))
-        try:
+        with _translate_errors("Failed to start services", "up"):
             self.compose.up(services=services, detach=detach, wait=wait)
-        except DockerException as e:
-            raise DockerComposeError(f"Failed to start services: {e}") from e
-        except Exception as e:
-            raise DockerComposeError(f"Unexpected error during up: {e}") from e
 
     def down(
         self,
@@ -127,7 +136,7 @@ class DockerComposeWrapper:
         Raises:
             DockerComposeError: If down command fails
         """
-        try:
+        with _translate_errors("Failed to stop services", "down"):
             if services:
                 stop_parts = ["docker", "compose", "stop", *services]
                 self._notice(" ".join(stop_parts))
@@ -148,10 +157,6 @@ class DockerComposeWrapper:
                     down_parts.append("--volumes")
                 self._notice(" ".join(down_parts))
                 self.compose.down(remove_orphans=remove_orphans, volumes=volumes)
-        except DockerException as e:
-            raise DockerComposeError(f"Failed to stop services: {e}") from e
-        except Exception as e:
-            raise DockerComposeError(f"Unexpected error during down: {e}") from e
 
     def stop(self, services: list[str] | None = None) -> None:
         """Stop services without removing them.
@@ -166,12 +171,8 @@ class DockerComposeWrapper:
         if services:
             parts.extend(services)
         self._notice(" ".join(parts))
-        try:
+        with _translate_errors("Failed to stop services", "stop"):
             self.compose.stop(services=services)
-        except DockerException as e:
-            raise DockerComposeError(f"Failed to stop services: {e}") from e
-        except Exception as e:
-            raise DockerComposeError(f"Unexpected error during stop: {e}") from e
 
     def ps(self) -> list:
         """Return running containers for this compose project."""
