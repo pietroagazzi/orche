@@ -2,6 +2,7 @@
 
 import socket
 from collections.abc import Callable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
@@ -180,8 +181,19 @@ class Stack:
         # Command registry
         self.commands: CommandRegistry[Callable[[], None]] = CommandRegistry()
 
-        # Runtime context
-        self._active_services: list[str] = []
+        # Scoped to run() and isolated per thread/task, so concurrent or nested
+        # runs on the same Stack never see each other's services.
+        self._active_services_var: ContextVar[list[str] | None] = ContextVar(
+            "orche_active_services", default=None
+        )
+
+    @property
+    def _active_services(self) -> list[str]:
+        return self._active_services_var.get() or []
+
+    @_active_services.setter
+    def _active_services(self, services: list[str]) -> None:
+        self._active_services_var.set(services)
 
     def on(self, services: str | list[str]) -> bool:
         """Return True if at least one of the specified services is active.
@@ -304,8 +316,13 @@ class Stack:
             CommandError: If the command is not registered or the handler fails.
             HookError: If a before- or after-hook fails.
         """
-        self._active_services = services or []
+        token = self._active_services_var.set(list(services or []))
+        try:
+            self._execute(command)
+        finally:
+            self._active_services_var.reset(token)
 
+    def _execute(self, command: str) -> None:
         handler = self.commands.get(command)
         if not handler:
             available = self.commands.available_commands()
@@ -319,7 +336,6 @@ class Stack:
         for hook in self.commands.get_before_hooks(command):
             self._run_hook("before", command, hook)
 
-        # Main handler
         try:
             handler()
         except Exception as e:

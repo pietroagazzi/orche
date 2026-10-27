@@ -138,13 +138,69 @@ class TestStackRun:
         stack.run("deploy")
         assert called
 
-    def test_sets_active_services(self, stack: Stack) -> None:
+    def test_sets_active_services_during_run(self, stack: Stack) -> None:
+        seen: list[str] = []
+
+        @stack.commands.up
+        def handler() -> None:
+            seen.extend(stack._active_services)
+
+        stack.run("up", services=["web", "db"])
+        assert seen == ["web", "db"]
+
+    def test_active_services_cleared_after_run(self, stack: Stack) -> None:
         @stack.commands.up
         def handler() -> None:
             pass
 
-        stack.run("up", services=["web", "db"])
-        assert stack._active_services == ["web", "db"]
+        stack.run("up", services=["web"])
+        assert stack._active_services == []
+
+    def test_active_services_cleared_after_failure(self, stack: Stack) -> None:
+        @stack.commands.up
+        def handler() -> None:
+            raise RuntimeError("boom")
+
+        with pytest.raises(CommandError):
+            stack.run("up", services=["web"])
+        assert stack._active_services == []
+
+    def test_nested_run_restores_outer_services(self, stack: Stack) -> None:
+        seen: list[list[str]] = []
+
+        @stack.commands.build
+        def build() -> None:
+            seen.append(list(stack._active_services))
+
+        @stack.commands.up
+        def up() -> None:
+            stack.run("build", services=["db"])
+            seen.append(list(stack._active_services))
+
+        stack.run("up", services=["web"])
+        assert seen == [["db"], ["web"]]
+
+    def test_concurrent_runs_are_isolated(self, stack: Stack) -> None:
+        import threading
+
+        barrier = threading.Barrier(2)
+        seen: dict[str, list[str]] = {}
+
+        @stack.commands.up
+        def up() -> None:
+            barrier.wait(timeout=5)
+            seen[threading.current_thread().name] = list(stack._active_services)
+
+        threads = [
+            threading.Thread(target=stack.run, args=("up", [svc]), name=svc)
+            for svc in ("web", "db")
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert seen == {"web": ["web"], "db": ["db"]}
 
     def test_before_hooks_execute_in_order(self, stack: Stack) -> None:
         order: list[str] = []
