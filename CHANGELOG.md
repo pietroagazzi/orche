@@ -6,9 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Integration tests against a real Docker daemon (`pytest -m integration`),
+  run in CI on Linux. They are deselected from the default test run.
+
 ### Changed
 
 - Consolidate Docker and stack operations.
+
+### Fixed
+
+- Scope the active services to each `Stack.run()` call. They were previously
+  left set after a run and shared between nested or concurrent runs.
 
 ## [0.5.1] - 2026-05-21
 

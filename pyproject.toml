@@ -62,7 +62,10 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --timeout=300"
+addopts = "-ra -q --timeout=300 -m 'not integration'"
+markers = [
+    "integration: runs against a real Docker daemon (deselected by default)",
+]
 
 [tool.ruff]
 line-length = 88

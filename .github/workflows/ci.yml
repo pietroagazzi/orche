@@ -61,10 +61,30 @@ jobs:
                   file: ./coverage.xml
                   fail_ci_if_error: false
 
+    integration:
+        name: Integration (Docker)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v7
+
+            - name: Set up Python
+              uses: actions/setup-python@v6
+              with:
+                  python-version: "3.11"
+
+            - name: Install dependencies
+              run: uv sync --extra dev
+
+            - name: Run integration tests
+              run: uv run pytest -m integration -v
+
     build:
         name: Build Package
         runs-on: ubuntu-latest
-        needs: [lint, test]
+        needs: [lint, test, integration]
         steps:
             - uses: actions/checkout@v7
 
