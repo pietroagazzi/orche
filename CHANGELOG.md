@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Drop Python 3.10 support (end of life); the minimum is now Python 3.11.
+
+### Security
+
+- Update `certifi` and `filelock` to patched versions.
+
 ## [0.6.0] - 2026-10-28
 
 ### Added
