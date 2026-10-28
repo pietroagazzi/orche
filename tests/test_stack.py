@@ -418,3 +418,179 @@ class TestGetLocalIp:
         assert _get_local_ip() == "127.0.0.1"
         warn.assert_called_once()
         sock.close.assert_called_once()
+
+
+class TestCommandOptions:
+    def test_parse_args_splits_services_and_options(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev", force: bool = False, replicas: int = 1) -> None:
+            pass
+
+        services, options = stack.parse_args(
+            "deploy", ["web", "--env", "prod", "--force", "--replicas=3", "db"]
+        )
+        assert services == ["web", "db"]
+        assert options == {"env": "prod", "force": True, "replicas": 3}
+
+    def test_parse_args_fills_defaults(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev") -> None:
+            pass
+
+        assert stack.parse_args("deploy", []) == ([], {"env": "dev"})
+
+    def test_bool_negation_and_underscore_flag(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(dry_run: bool = True) -> None:
+            pass
+
+        _, options = stack.parse_args("deploy", ["--no-dry-run"])
+        assert options == {"dry_run": False}
+        _, options = stack.parse_args("deploy", ["--dry-run=false"])
+        assert options == {"dry_run": False}
+
+    def test_unannotated_parameter_infers_type_from_default(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(retries=2) -> None:  # type: ignore[no-untyped-def]
+            pass
+
+        _, options = stack.parse_args("deploy", ["--retries", "5"])
+        assert options == {"retries": 5}
+
+    def test_optional_annotation_is_unwrapped(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(tag: str | None = None) -> None:
+            pass
+
+        assert stack.parse_args("deploy", ["--tag", "v1"])[1] == {"tag": "v1"}
+        assert stack.parse_args("deploy", [])[1] == {"tag": None}
+
+    def test_negative_number_is_a_value(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(offset: int = 0) -> None:
+            pass
+
+        assert stack.parse_args("deploy", ["--offset", "-1"])[1] == {"offset": -1}
+
+    def test_double_dash_ends_options(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy() -> None:
+            pass
+
+        assert stack.parse_args("deploy", ["--", "--odd"]) == (["--odd"], {})
+
+    def test_unknown_option_lists_available(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev") -> None:
+            pass
+
+        with pytest.raises(CommandError, match=r"Unknown option '--nope'.*--env"):
+            stack.parse_args("deploy", ["--nope"])
+
+    def test_option_on_command_without_options(self, stack: Stack) -> None:
+        @stack.commands.up
+        def up() -> None:
+            pass
+
+        with pytest.raises(CommandError, match="takes no options"):
+            stack.parse_args("up", ["--env", "prod"])
+
+    def test_short_option_is_rejected(self, stack: Stack) -> None:
+        @stack.commands.up
+        def up() -> None:
+            pass
+
+        with pytest.raises(CommandError, match="Unknown option '-x'"):
+            stack.parse_args("up", ["-x"])
+
+    def test_missing_value(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev") -> None:
+            pass
+
+        with pytest.raises(CommandError, match="requires a value"):
+            stack.parse_args("deploy", ["--env"])
+
+    def test_invalid_value(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(replicas: int = 1) -> None:
+            pass
+
+        with pytest.raises(CommandError, match="expected int"):
+            stack.parse_args("deploy", ["--replicas", "many"])
+
+    def test_missing_required_option(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(env: str) -> None:
+            pass
+
+        with pytest.raises(CommandError, match="Missing required option --env"):
+            stack.parse_args("deploy", [])
+
+    def test_parse_args_unknown_command(self, stack: Stack) -> None:
+        with pytest.raises(CommandError, match="Unknown command"):
+            stack.parse_args("missing", [])
+
+    def test_unsupported_type_fails_at_registration(self, stack: Stack) -> None:
+        with pytest.raises(ConfigError, match="unsupported type"):
+
+            @stack.commands.register("deploy")
+            def deploy(tags: list[str]) -> None:
+                pass
+
+    def test_reserved_flag_fails_at_registration(self, stack: Stack) -> None:
+        with pytest.raises(ConfigError, match="reserved"):
+
+            @stack.commands.register("deploy")
+            def deploy(debug: bool = False) -> None:
+                pass
+
+    def test_handler_receives_options(self, stack: Stack) -> None:
+        received: dict[str, object] = {}
+
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev", force: bool = False) -> None:
+            received.update(env=env, force=force)
+
+        stack.run("deploy", options={"env": "prod"})
+        assert received == {"env": "prod", "force": False}
+
+    def test_run_rejects_unknown_option(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy() -> None:
+            pass
+
+        with pytest.raises(CommandError, match="Unknown option"):
+            stack.run("deploy", options={"env": "prod"})
+
+    def test_hooks_receive_only_declared_options(self, stack: Stack) -> None:
+        calls: list[tuple[str, object]] = []
+
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev", force: bool = False) -> None:
+            pass
+
+        @stack.commands.register("deploy").before
+        def check(env: str) -> None:
+            calls.append(("before", env))
+
+        @stack.commands.register("deploy").after
+        def done() -> None:
+            calls.append(("after", None))
+
+        stack.run("deploy", options={"env": "prod"})
+        assert calls == [("before", "prod"), ("after", None)]
+
+    def test_hook_with_var_keyword_receives_all_options(self, stack: Stack) -> None:
+        seen: dict[str, object] = {}
+
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev") -> None:
+            pass
+
+        @stack.commands.register("deploy").before
+        def check(**kwargs: object) -> None:
+            seen.update(kwargs)
+
+        stack.run("deploy", options={"env": "prod"})
+        assert seen == {"env": "prod"}

@@ -12,6 +12,13 @@ from orche.cli import _parse_chained, find_or_validate_orchefile, main
 from orche.exceptions import CommandError, HookError, OrcheError, OrchefileError
 
 
+def _mock_stack(mocker: Any) -> Any:
+    """Stack double whose parse_args treats every token as a service."""
+    stack = mocker.MagicMock()
+    stack.parse_args.side_effect = lambda command, tokens: (list(tokens), {})
+    return stack
+
+
 @pytest.fixture()
 def runner() -> CliRunner:
     return CliRunner()
@@ -33,7 +40,7 @@ class TestMainCommand:
         assert "not found" in result.output
 
     def test_command_error_exits_1(self, runner: CliRunner, mocker: Any) -> None:
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mock_stack.run.side_effect = CommandError("unknown command 'foo'")
         mocker.patch("orche.cli.find_or_validate_orchefile")
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
@@ -43,7 +50,7 @@ class TestMainCommand:
         assert "unknown command" in result.output
 
     def test_orche_error_exits_1(self, runner: CliRunner, mocker: Any) -> None:
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mock_stack.run.side_effect = OrcheError("something broke")
         mocker.patch("orche.cli.find_or_validate_orchefile")
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
@@ -53,7 +60,7 @@ class TestMainCommand:
         assert "something broke" in result.output
 
     def test_hook_error_exits_1(self, runner: CliRunner, mocker: Any) -> None:
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mock_stack.run.side_effect = HookError("before", "up", RuntimeError("x"))
         mocker.patch("orche.cli.find_or_validate_orchefile")
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
@@ -63,7 +70,7 @@ class TestMainCommand:
         assert "before-hook" in result.output
 
     def test_unexpected_error_exits_1(self, runner: CliRunner, mocker: Any) -> None:
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mock_stack.run.side_effect = RuntimeError("unexpected")
         mocker.patch("orche.cli.find_or_validate_orchefile")
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
@@ -73,16 +80,18 @@ class TestMainCommand:
         assert "Unexpected error" in result.output
 
     def test_passes_command_and_services(self, runner: CliRunner, mocker: Any) -> None:
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mocker.patch("orche.cli.find_or_validate_orchefile")
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
 
         runner.invoke(main, ["up", "web", "db"])
-        mock_stack.run.assert_called_once_with(command="up", services=["web", "db"])
+        mock_stack.run.assert_called_once_with(
+            command="up", services=["web", "db"], options={}
+        )
 
     def test_custom_file_option(self, runner: CliRunner, mocker: Any) -> None:
         mock_find = mocker.patch("orche.cli.find_or_validate_orchefile")
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
 
         runner.invoke(main, ["-f", "custom.py", "up"])
@@ -134,18 +143,18 @@ class TestChainedExecution:
     def test_executes_all_commands_in_order(
         self, runner: CliRunner, mocker: Any
     ) -> None:
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mocker.patch("orche.cli.find_or_validate_orchefile")
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
 
         result = runner.invoke(main, ["build,", "up", "web"])
         assert result.exit_code == 0
         assert mock_stack.run.call_count == 2
-        mock_stack.run.assert_any_call(command="build", services=[])
-        mock_stack.run.assert_any_call(command="up", services=["web"])
+        mock_stack.run.assert_any_call(command="build", services=[], options={})
+        mock_stack.run.assert_any_call(command="up", services=["web"], options={})
 
     def test_stops_on_first_failure(self, runner: CliRunner, mocker: Any) -> None:
-        mock_stack = mocker.MagicMock()
+        mock_stack = _mock_stack(mocker)
         mock_stack.run.side_effect = CommandError("build failed")
         mocker.patch("orche.cli.find_or_validate_orchefile")
         mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
@@ -191,3 +200,39 @@ class TestFindOrValidateOrchefile:
     def test_custom_path_not_found_raises(self, tmp_path: Path) -> None:
         with pytest.raises(OrchefileError, match="File not found"):
             find_or_validate_orchefile(tmp_path / "missing.py")
+
+
+class TestOptionsPassthrough:
+    def test_options_reach_the_stack(self, runner: CliRunner, mocker: Any) -> None:
+        mock_stack = _mock_stack(mocker)
+        mock_stack.parse_args.side_effect = lambda command, tokens: (
+            ["web"],
+            {"env": "prod"},
+        )
+        mocker.patch("orche.cli.find_or_validate_orchefile")
+        mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
+
+        result = runner.invoke(main, ["deploy", "web", "--env", "prod"])
+        assert result.exit_code == 0
+        mock_stack.parse_args.assert_called_once_with(
+            "deploy", ["web", "--env", "prod"]
+        )
+        mock_stack.run.assert_called_once_with(
+            command="deploy", services=["web"], options={"env": "prod"}
+        )
+
+    def test_parse_error_prevents_any_command_from_running(
+        self, runner: CliRunner, mocker: Any
+    ) -> None:
+        mock_stack = _mock_stack(mocker)
+        mock_stack.parse_args.side_effect = [
+            ([], {}),
+            CommandError("Unknown option '--bad'"),
+        ]
+        mocker.patch("orche.cli.find_or_validate_orchefile")
+        mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
+
+        result = runner.invoke(main, ["build,", "deploy", "--bad"])
+        assert result.exit_code == 1
+        assert "--bad" in result.output
+        mock_stack.run.assert_not_called()

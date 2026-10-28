@@ -107,10 +107,11 @@ def import_orchefile(orchefile_path: Path) -> Stack:
                 sys.path.remove(str(orchefile_dir))
 
 
-def _parse_chained(
-    command: str, services: tuple[str, ...]
-) -> list[tuple[str, list[str]]]:
-    """Split a flat token list into chained (command, services) pairs.
+def _parse_chained(command: str, args: tuple[str, ...]) -> list[tuple[str, list[str]]]:
+    """Split a flat token list into chained (command, args) pairs.
+
+    The args of each pair are the raw tokens that followed the command; the
+    stack later splits them into services and options.
 
     Commas act as separators between invocations, either standalone (`` , ``)
     or attached to the preceding token (``build,``).
@@ -134,7 +135,7 @@ def _parse_chained(
         _parse_chained(",", (",",))
         # → []  all tokens are commas, nothing to run
     """
-    tokens = [command, *services]
+    tokens = [command, *args]
     groups: list[list[str]] = []
     current: list[str] = []
 
@@ -156,14 +157,16 @@ def _parse_chained(
 
 
 @click.command(
+    context_settings={"ignore_unknown_options": True},
     epilog=(
         "Built-in commands: up, build, down, stop, rm. "
         "Custom commands defined in orchefile.py. "
-        "Chain multiple commands with commas: orche build, up web."
-    )
+        "Chain multiple commands with commas: orche build, up web. "
+        "Options after a command are defined by its handler: orche deploy --env prod."
+    ),
 )
 @click.argument("command")
-@click.argument("services", nargs=-1)
+@click.argument("args", nargs=-1, metavar="[SERVICES_AND_OPTIONS]...")
 @click.option(
     "-f",
     "--file",
@@ -173,7 +176,7 @@ def _parse_chained(
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 @click.version_option(version=__version__, prog_name="orche")
-def main(command: str, services: tuple[str, ...], file: Path, debug: bool) -> None:
+def main(command: str, args: tuple[str, ...], file: Path, debug: bool) -> None:
     """Orche - Docker Compose Stack Orchestrator
 
     Execute commands defined in your orchefile.py with Docker Compose.
@@ -193,33 +196,37 @@ def main(command: str, services: tuple[str, ...], file: Path, debug: bool) -> No
             error_console.print_exception()
         sys.exit(1)
 
-    # Execute each chained invocation sequentially; stop on first failure
-    invocations = _parse_chained(command, services)
+    invocations = _parse_chained(command, args)
     if not invocations:
         error_console.print(
             "[yellow]Warning: no commands to run — all tokens were commas. "
             "Did you mean to chain commands, e.g. `orche build, up`?[/yellow]"
         )
         sys.exit(1)
-    for cmd, svcs in invocations:
-        try:
-            stack.run(command=cmd, services=svcs)
-        except CommandError as e:
-            error_console.print(f"[red]Error: {e}[/red]")
-            sys.exit(1)
-        except OrcheError as e:
-            error_console.print(f"[red]Error: {e}[/red]")
-            if debug:
-                error_console.print_exception()
-            sys.exit(1)
-        except KeyboardInterrupt:
-            error_console.print("\n[yellow]Interrupted by user[/yellow]")
-            sys.exit(130)
-        except Exception as e:
-            error_console.print(f"[red]Unexpected error: {e}[/red]")
-            if debug:
-                error_console.print_exception()
-            sys.exit(1)
+
+    # Parse every invocation before running any, so a typo in a later option
+    # does not surface only after earlier commands have already run.
+    # Execute sequentially; stop on first failure.
+    try:
+        parsed = [(cmd, *stack.parse_args(cmd, tokens)) for cmd, tokens in invocations]
+        for cmd, services, options in parsed:
+            stack.run(command=cmd, services=services, options=options)
+    except CommandError as e:
+        error_console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+    except OrcheError as e:
+        error_console.print(f"[red]Error: {e}[/red]")
+        if debug:
+            error_console.print_exception()
+        sys.exit(1)
+    except KeyboardInterrupt:
+        error_console.print("\n[yellow]Interrupted by user[/yellow]")
+        sys.exit(130)
+    except Exception as e:
+        error_console.print(f"[red]Unexpected error: {e}[/red]")
+        if debug:
+            error_console.print_exception()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

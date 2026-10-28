@@ -11,12 +11,11 @@ container, pulling images or inspecting the resolved configuration still require
 dropping to `docker compose` or writing a custom command by hand. Orche already
 knows how to list running containers, but no command exposes it.
 
-## Custom commands cannot take arguments or options
+## Command options cannot be lists
 
-Every token after a command name is interpreted as a service name, and handlers
-receive no parameters. Something like `orche deploy --env prod` cannot be
-expressed, so any command that needs input has to read environment variables or
-be hard-coded.
+Command options are limited to `str`, `int`, `float` and `bool`. An option that
+can be given more than once, such as `--tag a --tag b`, cannot be expressed, so
+handlers that need several values have to join them into a single string.
 
 ## Commands defined in the orchefile are not discoverable
 
