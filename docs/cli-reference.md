@@ -3,7 +3,7 @@
 ## Synopsis
 
 ```
-orche [OPTIONS] COMMAND[,] [SERVICES]... [, COMMAND [SERVICES]...]...
+orche [OPTIONS] COMMAND[,] [SERVICES]... [--OPTION [VALUE]]... [, COMMAND ...]...
 ```
 
 ## Arguments
@@ -21,6 +21,37 @@ orche [OPTIONS] COMMAND[,] [SERVICES]... [, COMMAND [SERVICES]...]...
 | `--debug`         | Enable debug logging                        |
 | `--version`       | Show version and exit                       |
 | `--help`          | Show help and exit                          |
+
+## Command Options
+
+The options a command accepts are the parameters of its handler. Parameters
+become `--kebab-case` flags, and the annotation decides how the value is
+converted (`str`, `int`, `float` or `bool`; an unannotated parameter takes the
+type of its default).
+
+```python
+@stack.commands.register("deploy")
+def deploy(env: str = "dev", dry_run: bool = False) -> None:
+    ...
+```
+
+```bash
+orche deploy web --env prod --dry-run
+orche deploy --env=prod --no-dry-run
+```
+
+- A parameter without a default is a required option.
+- A `list[str]` (or `list[int]`, `list[float]`) parameter can be given more than
+  once and collects the values in order: `--tag a --tag b` gives `["a", "b"]`.
+  `list[bool]` is not supported.
+- `bool` options are flags: `--flag` sets `True` and `--no-flag` sets `False`.
+- Tokens that are not options are service names. Use `--` to force the rest of
+  the line to be read as services.
+- Before and after hooks receive the options they declare as parameters, with
+  the same resolved values as the handler.
+- `file`, `debug`, `help` and `version` are reserved for the CLI itself.
+- In a chain, each command has its own options, and every command is validated
+  before the first one runs.
 
 ## Command Chaining
 
@@ -69,6 +100,9 @@ orche --debug up
 
 # Custom command defined in orchefile
 orche deploy
+
+# Custom command with options
+orche deploy web --env prod --dry-run
 ```
 
 ## Exit Codes

@@ -11,13 +11,6 @@ container, pulling images or inspecting the resolved configuration still require
 dropping to `docker compose` or writing a custom command by hand. Orche already
 knows how to list running containers, but no command exposes it.
 
-## Custom commands cannot take arguments or options
-
-Every token after a command name is interpreted as a service name, and handlers
-receive no parameters. Something like `orche deploy --env prod` cannot be
-expressed, so any command that needs input has to read environment variables or
-be hard-coded.
-
 ## Commands defined in the orchefile are not discoverable
 
 `orche --help` lists the built-in commands only. A user has to open the
