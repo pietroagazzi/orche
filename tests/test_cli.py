@@ -247,3 +247,17 @@ class TestOptionsPassthrough:
         result = runner.invoke(main, ["deploy", "--", "--odd"])
         assert result.exit_code == 0
         mock_stack.parse_args.assert_called_once_with("deploy", ["--", "--odd"])
+
+    def test_global_flags_after_end_of_options_are_not_parsed(
+        self, runner: CliRunner, mocker: Any
+    ) -> None:
+        mock_stack = _mock_stack(mocker)
+        find = mocker.patch("orche.cli.find_or_validate_orchefile")
+        mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
+
+        result = runner.invoke(main, ["deploy", "--", "--file", "other.py"])
+        assert result.exit_code == 0
+        find.assert_called_once_with(Path("orchefile.py"))
+        mock_stack.parse_args.assert_called_once_with(
+            "deploy", ["--", "--file", "other.py"]
+        )
