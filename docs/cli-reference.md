@@ -10,7 +10,7 @@ orche [OPTIONS] COMMAND[,] [SERVICES]... [, COMMAND [SERVICES]...]...
 
 | Argument   | Description                                                                   |
 | ---------- | ----------------------------------------------------------------------------- |
-| `COMMAND`  | Command to run (built-in or custom). Built-ins: `up`, `build`, `down`, `stop` |
+| `COMMAND`  | Command to run (built-in or custom). Built-ins: `up`, `build`, `down`, `stop`, `rm` |
 | `SERVICES` | Optional list of service names to target (space-separated)                    |
 
 ## Options

@@ -3,14 +3,11 @@
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Literal
 
 from rich.console import Console
 from rich.logging import RichHandler
 
 _console = Console()
-
-LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 def setup_logger(

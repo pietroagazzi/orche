@@ -2,6 +2,7 @@
 
 import socket
 from collections.abc import Callable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
@@ -26,13 +27,18 @@ def _get_local_ip() -> str:
         s.connect(("8.8.8.8", 80))
         ip: str = s.getsockname()[0]
         return ip
-    except Exception:
+    except Exception as e:
+        get_logger().warning(
+            "Could not detect the local IP (%s); using 127.0.0.1. "
+            "Pass host=... to Stack to set it explicitly.",
+            e,
+        )
         return "127.0.0.1"
     finally:
         s.close()
 
 
-BuiltinCommandType = Literal["up", "build", "down", "stop"]
+BuiltinCommandType = Literal["up", "build", "down", "stop", "rm"]
 
 T = TypeVar("T", bound=Callable[[], None])
 
@@ -102,6 +108,11 @@ class CommandRegistry(Generic[T]):
         """Decorator for the 'stop' command."""
         return self.register("stop")
 
+    @property
+    def rm(self) -> "CommandHandle[T]":
+        """Decorator for the 'rm' command."""
+        return self.register("rm")
+
     def get(self, name: str) -> Callable[[], None] | None:
         """Get a registered command handler."""
         return self._commands.get(name)
@@ -127,6 +138,7 @@ class Stack:
         name: str | None = None,
         path: str | Path = ".",
         compose_files: list[str] | list[Path] | None = None,
+        host: str | None = None,
     ):
         """Initialize a Docker Compose stack.
 
@@ -138,12 +150,16 @@ class Stack:
                           Files are merged in order (later files override earlier ones).
                           Defaults to ["docker-compose.yml"] if None.
                           Cannot be an empty list.
+            host: Host name or IP used to build the URLs in
+                  ``print_services_summary``. When omitted, the local outbound
+                  IPv4 address is detected, falling back to ``127.0.0.1``.
 
         Raises:
             ConfigError: If compose_files is empty or files do not exist
         """
         self.project_path: Path = Path(path).resolve()
         self.project_name = name
+        self.host = host
         self.logger = get_logger()
 
         compose_file_inputs = (
@@ -180,8 +196,19 @@ class Stack:
         # Command registry
         self.commands: CommandRegistry[Callable[[], None]] = CommandRegistry()
 
-        # Runtime context
-        self._active_services: list[str] = []
+        # Scoped to run() and isolated per thread/task, so concurrent or nested
+        # runs on the same Stack never see each other's services.
+        self._active_services_var: ContextVar[list[str] | None] = ContextVar(
+            "orche_active_services", default=None
+        )
+
+    @property
+    def _active_services(self) -> list[str]:
+        return self._active_services_var.get() or []
+
+    @_active_services.setter
+    def _active_services(self, services: list[str]) -> None:
+        self._active_services_var.set(services)
 
     def on(self, services: str | list[str]) -> bool:
         """Return True if at least one of the specified services is active.
@@ -206,6 +233,23 @@ class Stack:
         # Check if any service in the list is active (OR logic)
         return any(s in self._active_services for s in services)
 
+    def _resolve_services(
+        self, services: list[str] | None, action: str
+    ) -> list[str] | None:
+        """Pick explicit services or the CLI-active ones, and log the action.
+
+        Returns None when no services are targeted, which means "all services"
+        to the Docker wrapper.
+        """
+        target_services = services if services is not None else self._active_services
+
+        if target_services:
+            self.logger.info(f"{action} services: {', '.join(target_services)}")
+        else:
+            self.logger.info(f"{action} all services")
+
+        return target_services or None
+
     def build(self, services: list[str] | None = None) -> "Stack":
         """Build services in the stack.
 
@@ -217,14 +261,8 @@ class Stack:
         Returns:
             Self for method chaining
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(f"Building services: {', '.join(target_services)}")
-        else:
-            self.logger.info("Building all services")
-
-        self._docker.build(services=target_services if target_services else None)
+        target_services = self._resolve_services(services, "Building")
+        self._docker.build(services=target_services)
         return self
 
     def up(self, services: list[str] | None = None, wait: bool = True) -> "Stack":
@@ -239,43 +277,53 @@ class Stack:
         Returns:
             Self for method chaining
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(f"Starting services: {', '.join(target_services)}")
-        else:
-            self.logger.info("Starting all services")
-
-        self._docker.up(services=target_services or None, wait=wait)
+        target_services = self._resolve_services(services, "Starting")
+        self._docker.up(services=target_services, wait=wait)
 
         if wait:
             self.logger.info("Services are ready")
 
         return self
 
-    def down(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
-        """Stop and remove services in the stack.
+    def down(self, volumes: bool = False) -> "Stack":
+        """Stop and remove the whole stack, including its networks.
+
+        Like ``docker compose down``, this never targets specific services. Use
+        :meth:`rm` for that.
 
         Args:
-            services: Optional list of specific services to stop and remove
             volumes: Whether to remove named volumes
 
         Returns:
             Self for method chaining
+
+        Raises:
+            ConfigError: If services were selected on the command line
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(
-                f"Stopping and removing services: {', '.join(target_services)}"
+        if self._active_services:
+            raise ConfigError(
+                "'down' acts on the whole stack and does not accept services "
+                f"({', '.join(self._active_services)}). "
+                "Use 'rm' to remove specific services."
             )
-        else:
-            self.logger.info("Stopping and removing all services")
+        self.logger.info("Stopping and removing all services")
+        self._docker.down(volumes=volumes)
+        return self
 
-        self._docker.down(
-            services=target_services if target_services else None, volumes=volumes
-        )
+    def rm(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
+        """Stop and remove service containers, keeping networks and volumes.
 
+        If 'services' is not provided, uses the active services from CLI args.
+
+        Args:
+            services: Optional list of specific services to remove
+            volumes: Whether to remove anonymous volumes of the containers
+
+        Returns:
+            Self for method chaining
+        """
+        target_services = self._resolve_services(services, "Removing")
+        self._docker.rm(services=target_services, volumes=volumes)
         return self
 
     def stop(self, services: list[str] | None = None) -> "Stack":
@@ -287,15 +335,8 @@ class Stack:
         Returns:
             Self for method chaining
         """
-        target_services = services if services is not None else self._active_services
-
-        if target_services:
-            self.logger.info(f"Stopping services: {', '.join(target_services)}")
-        else:
-            self.logger.info("Stopping all services")
-
-        self._docker.stop(services=target_services if target_services else None)
-
+        target_services = self._resolve_services(services, "Stopping")
+        self._docker.stop(services=target_services)
         return self
 
     def run(self, command: str, services: list[str] | None = None) -> None:
@@ -317,8 +358,13 @@ class Stack:
             CommandError: If the command is not registered or the handler fails.
             HookError: If a before- or after-hook fails.
         """
-        self._active_services = services or []
+        token = self._active_services_var.set(list(services or []))
+        try:
+            self._execute(command)
+        finally:
+            self._active_services_var.reset(token)
 
+    def _execute(self, command: str) -> None:
         handler = self.commands.get(command)
         if not handler:
             available = self.commands.available_commands()
@@ -329,28 +375,23 @@ class Stack:
             )
             raise CommandError(f"Unknown command '{command}'.{hint}")
 
-        before_hooks = self.commands.get_before_hooks(command)
-        after_hooks = self.commands.get_after_hooks(command)
+        for hook in self.commands.get_before_hooks(command):
+            self._run_hook("before", command, hook)
 
-        # Before-hooks
-        for hook in before_hooks:
-            try:
-                hook()
-            except Exception as e:
-                raise HookError("before", command, e) from e
-
-        # Main handler
         try:
             handler()
         except Exception as e:
             raise CommandError(f"Command '{command}' failed: {e}") from e
 
-        # After-hooks
-        for hook in after_hooks:
-            try:
-                hook()
-            except Exception as e:
-                raise HookError("after", command, e) from e
+        for hook in self.commands.get_after_hooks(command):
+            self._run_hook("after", command, hook)
+
+    @staticmethod
+    def _run_hook(hook_type: str, command: str, hook: Callable[[], None]) -> None:
+        try:
+            hook()
+        except Exception as e:
+            raise HookError(hook_type, command, e) from e
 
     def client(self) -> DockerComposeWrapper:
         """Get the underlying DockerComposeWrapper instance."""
@@ -362,7 +403,7 @@ class Stack:
         if not containers:
             return
 
-        local_ip = _get_local_ip()
+        host = self.host or _get_local_ip()
         console = get_console()
 
         table = Table(
@@ -373,7 +414,6 @@ class Stack:
         table.add_column("URL", style="blue")
 
         seen: set[tuple[str, str, str]] = set()
-        rows_added = False
         for container in containers:
             service = container.config.labels.get(
                 "com.docker.compose.service", container.name
@@ -395,11 +435,10 @@ class Stack:
                     table.add_row(
                         service,
                         container_port,
-                        f"{scheme}://{local_ip}:{host_port}",
+                        f"{scheme}://{host}:{host_port}",
                     )
-                    rows_added = True
 
-        if rows_added:
+        if table.row_count:
             console.print(
                 Panel(table, title="[bold]Services[/bold]", border_style="cyan")
             )

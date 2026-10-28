@@ -1,6 +1,6 @@
 # Custom Commands
 
-You can register commands beyond the built-in `up`, `build`, `down`, `stop` using `stack.commands.register()`.
+You can register commands beyond the built-in `up`, `build`, `down`, `stop`, `rm` using `stack.commands.register()`.
 
 ## Registering a Custom Command
 

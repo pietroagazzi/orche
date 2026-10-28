@@ -1,4 +1,4 @@
-.PHONY: install lint format type-check test test-cov clean build docs all
+.PHONY: install lint format type-check test test-cov test-integration clean build docs all
 
 install:
 	pip install -e ".[dev]"
@@ -14,6 +14,9 @@ type-check:
 
 test:
 	pytest
+
+test-integration:
+	pytest -m integration -v
 
 test-cov:
 	pytest -v --cov=orche --cov-report=term --cov-report=html

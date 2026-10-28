@@ -98,6 +98,25 @@ class TestStackDelegation:
     def test_down_returns_self(self, stack: Stack) -> None:
         assert stack.down() is stack
 
+    def test_down_rejects_active_services(self, stack: Stack) -> None:
+        stack._active_services = ["web"]
+        with pytest.raises(ConfigError, match="Use 'rm'"):
+            stack.down()
+        stack._docker.down.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_rm_passes_explicit_services(self, stack: Stack) -> None:
+        stack.rm(services=["web"], volumes=True)
+        stack._docker.rm.assert_called_once_with(  # type: ignore[attr-defined]
+            services=["web"], volumes=True
+        )
+
+    def test_rm_uses_active_services(self, stack: Stack) -> None:
+        stack._active_services = ["db"]
+        assert stack.rm() is stack
+        stack._docker.rm.assert_called_once_with(  # type: ignore[attr-defined]
+            services=["db"], volumes=False
+        )
+
     def test_stop_delegates_to_docker(self, stack: Stack) -> None:
         stack.stop()
         stack._docker.stop.assert_called_once()  # type: ignore[attr-defined]
@@ -138,13 +157,69 @@ class TestStackRun:
         stack.run("deploy")
         assert called
 
-    def test_sets_active_services(self, stack: Stack) -> None:
+    def test_sets_active_services_during_run(self, stack: Stack) -> None:
+        seen: list[str] = []
+
+        @stack.commands.up
+        def handler() -> None:
+            seen.extend(stack._active_services)
+
+        stack.run("up", services=["web", "db"])
+        assert seen == ["web", "db"]
+
+    def test_active_services_cleared_after_run(self, stack: Stack) -> None:
         @stack.commands.up
         def handler() -> None:
             pass
 
-        stack.run("up", services=["web", "db"])
-        assert stack._active_services == ["web", "db"]
+        stack.run("up", services=["web"])
+        assert stack._active_services == []
+
+    def test_active_services_cleared_after_failure(self, stack: Stack) -> None:
+        @stack.commands.up
+        def handler() -> None:
+            raise RuntimeError("boom")
+
+        with pytest.raises(CommandError):
+            stack.run("up", services=["web"])
+        assert stack._active_services == []
+
+    def test_nested_run_restores_outer_services(self, stack: Stack) -> None:
+        seen: list[list[str]] = []
+
+        @stack.commands.build
+        def build() -> None:
+            seen.append(list(stack._active_services))
+
+        @stack.commands.up
+        def up() -> None:
+            stack.run("build", services=["db"])
+            seen.append(list(stack._active_services))
+
+        stack.run("up", services=["web"])
+        assert seen == [["db"], ["web"]]
+
+    def test_concurrent_runs_are_isolated(self, stack: Stack) -> None:
+        import threading
+
+        barrier = threading.Barrier(2)
+        seen: dict[str, list[str]] = {}
+
+        @stack.commands.up
+        def up() -> None:
+            barrier.wait(timeout=5)
+            seen[threading.current_thread().name] = list(stack._active_services)
+
+        threads = [
+            threading.Thread(target=stack.run, args=("up", [svc]), name=svc)
+            for svc in ("web", "db")
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert seen == {"web": ["web"], "db": ["db"]}
 
     def test_before_hooks_execute_in_order(self, stack: Stack) -> None:
         order: list[str] = []
@@ -282,3 +357,64 @@ class TestStackRun:
 
         stack.run("deploy")
         assert order == ["before", "handler", "after"]
+
+
+class TestServicesSummary:
+    @staticmethod
+    def _container(service: str, ports: dict[str, Any]) -> Any:
+        from unittest.mock import MagicMock
+
+        c = MagicMock()
+        c.name = service
+        c.config.labels = {"com.docker.compose.service": service}
+        c.network_settings.ports = ports
+        return c
+
+    def _urls(self, stack: Stack, mocker: Any) -> list[str]:
+        mocker.patch.object(
+            stack._docker,
+            "ps",
+            return_value=[
+                self._container("web", {"80/tcp": [{"HostPort": "8080"}]}),
+                self._container("tls", {"443/tcp": [{"HostPort": "8443"}]}),
+            ],
+        )
+        printed: list[Any] = []
+        mocker.patch(
+            "orche.stack.get_console"
+        ).return_value.print.side_effect = printed.append
+        stack.print_services_summary()
+        table = printed[0].renderable
+        return [str(cell) for cell in table.columns[2]._cells]
+
+    def test_explicit_host_is_used_without_detection(
+        self, make_stack: Any, mocker: Any
+    ) -> None:
+        detect = mocker.patch("orche.stack._get_local_ip")
+        stack = make_stack(host="myhost.local")
+
+        assert self._urls(stack, mocker) == [
+            "http://myhost.local:8080",
+            "https://myhost.local:8443",
+        ]
+        detect.assert_not_called()
+
+    def test_detected_ip_is_used_when_host_omitted(
+        self, stack: Stack, mocker: Any
+    ) -> None:
+        mocker.patch("orche.stack._get_local_ip", return_value="10.0.0.5")
+
+        assert self._urls(stack, mocker)[0] == "http://10.0.0.5:8080"
+
+
+class TestGetLocalIp:
+    def test_falls_back_to_loopback_and_warns(self, mocker: Any) -> None:
+        from orche.stack import _get_local_ip
+
+        sock = mocker.patch("orche.stack.socket.socket").return_value
+        sock.connect.side_effect = OSError("network unreachable")
+        warn = mocker.patch("orche.stack.get_logger").return_value.warning
+
+        assert _get_local_ip() == "127.0.0.1"
+        warn.assert_called_once()
+        sock.close.assert_called_once()

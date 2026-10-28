@@ -46,7 +46,9 @@ def import_orchefile(orchefile_path: Path) -> Stack:
     """Import orchefile.py as a module and extract stack instance.
 
     Uses importlib to load the orchefile as a proper Python module,
-    similar to how Flask loads app instances.
+    similar to how Flask loads app instances. On success the module is left
+    in ``sys.modules`` and its directory on ``sys.path``; a failed load
+    restores both.
 
     Args:
         orchefile_path: Path to orchefile.py
@@ -60,11 +62,11 @@ def import_orchefile(orchefile_path: Path) -> Stack:
     orchefile_dir = orchefile_path.parent.resolve()
     module_name = orchefile_path.stem
 
-    # Temporarily add orchefile directory to sys.path for local imports
     added_to_path = str(orchefile_dir) not in sys.path
     if added_to_path:
         sys.path.insert(0, str(orchefile_dir))
 
+    loaded = False
     try:
         spec = importlib.util.spec_from_file_location(module_name, orchefile_path)
 
@@ -93,11 +95,16 @@ def import_orchefile(orchefile_path: Path) -> Stack:
                 f"'stack' variable must be a Stack instance, got {type(stack).__name__}"
             )
 
+        loaded = True
         return stack
     finally:
-        if added_to_path and str(orchefile_dir) in sys.path:
-            sys.path.remove(str(orchefile_dir))
-        sys.modules.pop(module_name, None)
+        # Handlers run after loading and may import the orchefile or its sibling
+        # modules lazily, so on success both stay available for the process
+        # lifetime. Only a failed load is rolled back.
+        if not loaded:
+            sys.modules.pop(module_name, None)
+            if added_to_path and str(orchefile_dir) in sys.path:
+                sys.path.remove(str(orchefile_dir))
 
 
 def _parse_chained(
@@ -150,7 +157,7 @@ def _parse_chained(
 
 @click.command(
     epilog=(
-        "Built-in commands: up, build, down, stop. "
+        "Built-in commands: up, build, down, stop, rm. "
         "Custom commands defined in orchefile.py. "
         "Chain multiple commands with commas: orche build, up web."
     )

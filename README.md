@@ -50,6 +50,32 @@ orche down
 orche build, up
 ```
 
+## How Orche differs
+
+Orche is not a replacement for Docker Compose, and it is not a general-purpose
+task runner. If all you need is `docker compose up`, use that.
+
+Orche is useful when "starting the stack" involves more than Compose itself:
+cloning a repository, creating directories, generating config files, running a
+migration after the database is up. Instead of a shell script or a Makefile,
+you write that logic in Python, next to the Compose files, and attach it to
+`up`, `down` and your own commands with before/after hooks.
+
+What you get over a Makefile, `just` or a shell script:
+
+- Real Python for conditionals, parsing YAML and error handling.
+- Hooks tied to commands, and `stack.on("service")` to run logic only when a
+  given service is targeted.
+- Errors reported as exceptions with readable messages rather than exit codes.
+
+What you give up:
+
+- It is Python only and needs Docker Compose, so it is a poor fit for tasks
+  unrelated to a Compose stack.
+- It is young and small. See the [roadmap](ROADMAP.md).
+- Make, `just` and Taskfile are more widely known, so teammates may already
+  know them.
+
 ## Documentation
 
 Full documentation is available [here](https://pietroagazzi.github.io/orche/):

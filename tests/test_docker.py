@@ -88,22 +88,15 @@ class TestDockerUp:
 
 
 class TestDockerDown:
-    def test_down_no_services_calls_compose_down(
-        self, wrapper: DockerComposeWrapper
-    ) -> None:
+    def test_down_calls_compose_down(self, wrapper: DockerComposeWrapper) -> None:
         wrapper.down()
         wrapper.compose.down.assert_called_once_with(  # type: ignore[attr-defined]
             remove_orphans=True, volumes=False
         )
 
-    def test_down_with_services_calls_stop_then_rm(
-        self, wrapper: DockerComposeWrapper
-    ) -> None:
-        wrapper.down(services=["web"])
-        wrapper.compose.stop.assert_called_once_with(["web"])  # type: ignore[attr-defined]
-        wrapper.compose.rm.assert_called_once_with(  # type: ignore[attr-defined]
-            ["web"], stop=True, volumes=False
-        )
+    def test_down_does_not_accept_services(self, wrapper: DockerComposeWrapper) -> None:
+        with pytest.raises(TypeError):
+            wrapper.down(services=["web"])  # type: ignore[call-arg]
 
     def test_down_docker_exception_raises(self, wrapper: DockerComposeWrapper) -> None:
         wrapper.compose.down.side_effect = DockerException(  # type: ignore[attr-defined]
@@ -111,6 +104,22 @@ class TestDockerDown:
         )
         with pytest.raises(DockerComposeError, match="Failed to stop"):
             wrapper.down()
+
+
+class TestDockerRm:
+    def test_rm_services_stops_and_removes(self, wrapper: DockerComposeWrapper) -> None:
+        wrapper.rm(services=["web"])
+        wrapper.compose.rm.assert_called_once_with(  # type: ignore[attr-defined]
+            ["web"], stop=True, volumes=False
+        )
+        wrapper.compose.down.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_rm_docker_exception_raises(self, wrapper: DockerComposeWrapper) -> None:
+        wrapper.compose.rm.side_effect = DockerException(  # type: ignore[attr-defined]
+            command_launched=["rm"], return_code=1
+        )
+        with pytest.raises(DockerComposeError, match="Failed to remove"):
+            wrapper.rm(services=["web"])
 
 
 class TestDockerStop:
