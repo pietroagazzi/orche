@@ -168,7 +168,8 @@ class _OrcheCommand(click.Command):
             marker = args.index("--")
             ctx.meta[_TAIL_KEY] = args[marker + 1 :]
             args = args[:marker]
-        return super().parse_args(ctx, args)
+        remaining: list[str] = super().parse_args(ctx, args)
+        return remaining
 
 
 @click.command(
