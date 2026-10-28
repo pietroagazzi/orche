@@ -465,6 +465,59 @@ class TestCommandOptions:
         assert stack.parse_args("deploy", ["--tag", "v1"])[1] == {"tag": "v1"}
         assert stack.parse_args("deploy", [])[1] == {"tag": None}
 
+    def test_list_option_collects_repeated_flags(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(tag: list[str] | None = None, port: list[int] | None = None) -> None:
+            pass
+
+        services, options = stack.parse_args(
+            "deploy", ["web", "--tag", "a", "--tag=b", "--port", "80", "--port", "81"]
+        )
+        assert services == ["web"]
+        assert options == {"tag": ["a", "b"], "port": [80, 81]}
+        assert stack.parse_args("deploy", [])[1] == {"tag": None, "port": None}
+
+    def test_list_option_rejects_invalid_item(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(port: list[int]) -> None:
+            pass
+
+        with pytest.raises(CommandError, match="Invalid value for --port"):
+            stack.parse_args("deploy", ["--port", "80", "--port", "x"])
+
+    def test_required_list_option(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(tag: list[str]) -> None:
+            pass
+
+        with pytest.raises(CommandError, match="Missing required option --tag"):
+            stack.parse_args("deploy", [])
+
+    def test_list_default_is_copied(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(tag: list[str] = ["latest"]) -> None:  # noqa: B006
+            pass
+
+        _, first = stack.parse_args("deploy", [])
+        first["tag"].append("x")
+        assert stack.parse_args("deploy", [])[1] == {"tag": ["latest"]}
+
+    def test_unannotated_list_default_is_a_list_of_str(self, stack: Stack) -> None:
+        @stack.commands.register("deploy")
+        def deploy(tag=["latest"]) -> None:  # type: ignore[no-untyped-def]  # noqa: B006
+            pass
+
+        assert stack.parse_args("deploy", ["--tag", "a", "--tag", "b"])[1] == {
+            "tag": ["a", "b"]
+        }
+
+    def test_list_of_bool_is_rejected(self, stack: Stack) -> None:
+        with pytest.raises(ConfigError, match="unsupported type"):
+
+            @stack.commands.register("deploy")
+            def deploy(flag: list[bool]) -> None:
+                pass
+
     def test_negative_number_is_a_value(self, stack: Stack) -> None:
         @stack.commands.register("deploy")
         def deploy(offset: int = 0) -> None:
@@ -535,7 +588,7 @@ class TestCommandOptions:
         with pytest.raises(ConfigError, match="unsupported type"):
 
             @stack.commands.register("deploy")
-            def deploy(tags: list[str]) -> None:
+            def deploy(tags: dict[str, str]) -> None:
                 pass
 
     def test_reserved_flag_fails_at_registration(self, stack: Stack) -> None:

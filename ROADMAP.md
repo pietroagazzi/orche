@@ -11,12 +11,6 @@ container, pulling images or inspecting the resolved configuration still require
 dropping to `docker compose` or writing a custom command by hand. Orche already
 knows how to list running containers, but no command exposes it.
 
-## Command options cannot be lists
-
-Command options are limited to `str`, `int`, `float` and `bool`. An option that
-can be given more than once, such as `--tag a --tag b`, cannot be expressed, so
-handlers that need several values have to join them into a single string.
-
 ## Commands defined in the orchefile are not discoverable
 
 `orche --help` lists the built-in commands only. A user has to open the

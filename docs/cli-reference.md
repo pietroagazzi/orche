@@ -41,6 +41,9 @@ orche deploy --env=prod --no-dry-run
 ```
 
 - A parameter without a default is a required option.
+- A `list[str]` (or `list[int]`, `list[float]`) parameter can be given more than
+  once and collects the values in order: `--tag a --tag b` gives `["a", "b"]`.
+  `list[bool]` is not supported.
 - `bool` options are flags: `--flag` sets `True` and `--no-flag` sets `False`.
 - Tokens that are not options are service names. Use `--` to force the rest of
   the line to be read as services.

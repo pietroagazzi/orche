@@ -26,6 +26,7 @@ class OptionSpec:
     flag: str
     type: type
     default: Any
+    multiple: bool = False
 
     @property
     def required(self) -> bool:
@@ -40,22 +41,35 @@ def _unwrap_optional(annotation: Any) -> Any:
     return annotation
 
 
-def _resolve_type(param: inspect.Parameter, hints: dict[str, Any], owner: str) -> type:
+def _resolve_type(
+    param: inspect.Parameter, hints: dict[str, Any], owner: str
+) -> tuple[type, bool]:
+    """Return the scalar type of an option and whether it can be repeated."""
     annotation = hints.get(param.name, param.annotation)
 
     if annotation is _MISSING or isinstance(annotation, str):
         # Unannotated (or unresolvable) parameters fall back to the default's type.
         inferred = type(param.default)
-        return inferred if inferred in _SUPPORTED_TYPES else str
+        if inferred is list:
+            return str, True
+        return (inferred if inferred in _SUPPORTED_TYPES else str), False
 
     annotation = _unwrap_optional(annotation)
-    if annotation not in _SUPPORTED_TYPES:
-        supported = ", ".join(t.__name__ for t in _SUPPORTED_TYPES)
+    multiple = False
+    if get_origin(annotation) is list:
+        (annotation,) = get_args(annotation) or (str,)
+        multiple = True
+
+    # A repeated bool has no sensible command-line form (--flag takes no value).
+    supported = _SUPPORTED_TYPES[:-1] if multiple else _SUPPORTED_TYPES
+    if annotation not in supported:
+        names = ", ".join(t.__name__ for t in _SUPPORTED_TYPES)
         raise ConfigError(
             f"Option '{param.name}' of '{owner}' has unsupported type "
-            f"{annotation!r}. Supported types: {supported}."
+            f"{annotation!r}. Supported types: {names}, or list of "
+            f"{', '.join(t.__name__ for t in _SUPPORTED_TYPES[:-1])}."
         )
-    return annotation  # type: ignore[no-any-return]
+    return annotation, multiple
 
 
 def build_option_specs(func: Callable[..., Any]) -> dict[str, OptionSpec]:
@@ -94,11 +108,13 @@ def build_option_specs(func: Callable[..., Any]) -> dict[str, OptionSpec]:
                 f"flag --{flag}. Rename the parameter."
             )
 
+        item_type, multiple = _resolve_type(param, hints, owner)
         specs[flag] = OptionSpec(
             name=param.name,
             flag=flag,
-            type=_resolve_type(param, hints, owner),
+            type=item_type,
             default=param.default,
+            multiple=multiple,
         )
     return specs
 
@@ -201,13 +217,19 @@ def parse_tokens(
             values[spec.name] = False
         elif spec.type is bool and not has_inline:
             values[spec.name] = True
-        elif has_inline:
-            values[spec.name] = _convert(spec, inline)
         else:
-            i += 1
-            if i >= len(tokens):
-                raise CommandError(f"Option '--{spec.flag}' requires a value")
-            values[spec.name] = _convert(spec, tokens[i])
+            if has_inline:
+                raw = inline
+            else:
+                i += 1
+                if i >= len(tokens):
+                    raise CommandError(f"Option '--{spec.flag}' requires a value")
+                raw = tokens[i]
+            value = _convert(spec, raw)
+            if spec.multiple:
+                values.setdefault(spec.name, []).append(value)
+            else:
+                values[spec.name] = value
         i += 1
 
     return services, values
@@ -233,6 +255,9 @@ def complete_options(
             resolved[name] = provided[name]
         elif spec.required:
             raise CommandError(f"Missing required option --{spec.flag} for '{command}'")
+        elif isinstance(spec.default, list):
+            # Copy so a handler mutating its list never alters the shared default.
+            resolved[name] = list(spec.default)
         else:
             resolved[name] = spec.default
     return resolved
