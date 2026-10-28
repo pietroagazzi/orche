@@ -157,6 +157,17 @@ def _convert(spec: OptionSpec, raw: str) -> Any:
         ) from None
 
 
+def _looks_like_option(token: str) -> bool:
+    """Whether a token is an option; negative numbers count as values."""
+    if not token.startswith("-") or token == "-":
+        return False
+    try:
+        float(token)
+    except ValueError:
+        return True
+    return False
+
+
 def _unknown(command: str, token: str, specs: dict[str, OptionSpec]) -> CommandError:
     if specs:
         valid = ", ".join(f"--{flag}" for flag in specs)
@@ -225,6 +236,8 @@ def parse_tokens(
                 if i >= len(tokens):
                     raise CommandError(f"Option '--{spec.flag}' requires a value")
                 raw = tokens[i]
+                if raw == "--" or _looks_like_option(raw):
+                    raise CommandError(f"Option '--{spec.flag}' requires a value")
             value = _convert(spec, raw)
             if spec.multiple:
                 values.setdefault(spec.name, []).append(value)

@@ -156,7 +156,20 @@ def _parse_chained(command: str, args: tuple[str, ...]) -> list[tuple[str, list[
     return [(g[0], g[1:]) for g in groups if g]
 
 
+# Click swallows the first "--" it sees, but the stack's own option parser needs
+# it to know where options end. Shield it from Click and restore it in main().
+_END_OF_OPTIONS = "\0--"
+
+
+class _OrcheCommand(click.Command):
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        return super().parse_args(
+            ctx, [_END_OF_OPTIONS if arg == "--" else arg for arg in args]
+        )
+
+
 @click.command(
+    cls=_OrcheCommand,
     context_settings={"ignore_unknown_options": True},
     epilog=(
         "Built-in commands: up, build, down, stop, rm. "
@@ -196,6 +209,8 @@ def main(command: str, args: tuple[str, ...], file: Path, debug: bool) -> None:
             error_console.print_exception()
         sys.exit(1)
 
+    command = "--" if command == _END_OF_OPTIONS else command
+    args = tuple("--" if arg == _END_OF_OPTIONS else arg for arg in args)
     invocations = _parse_chained(command, args)
     if not invocations:
         error_console.print(

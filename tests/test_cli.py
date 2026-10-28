@@ -236,3 +236,14 @@ class TestOptionsPassthrough:
         assert result.exit_code == 1
         assert "--bad" in result.output
         mock_stack.run.assert_not_called()
+
+    def test_end_of_options_marker_reaches_the_stack(
+        self, runner: CliRunner, mocker: Any
+    ) -> None:
+        mock_stack = _mock_stack(mocker)
+        mocker.patch("orche.cli.find_or_validate_orchefile")
+        mocker.patch("orche.cli.import_orchefile", return_value=mock_stack)
+
+        result = runner.invoke(main, ["deploy", "--", "--odd"])
+        assert result.exit_code == 0
+        mock_stack.parse_args.assert_called_once_with("deploy", ["--", "--odd"])

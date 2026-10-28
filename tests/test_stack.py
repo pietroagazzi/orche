@@ -564,6 +564,17 @@ class TestCommandOptions:
         with pytest.raises(CommandError, match="requires a value"):
             stack.parse_args("deploy", ["--env"])
 
+    @pytest.mark.parametrize("next_token", ["--dry-run", "--unknown", "-x", "--"])
+    def test_value_is_not_swallowed_from_next_option(
+        self, stack: Stack, next_token: str
+    ) -> None:
+        @stack.commands.register("deploy")
+        def deploy(env: str = "dev", dry_run: bool = False) -> None:
+            pass
+
+        with pytest.raises(CommandError, match="requires a value"):
+            stack.parse_args("deploy", ["--env", next_token])
+
     def test_invalid_value(self, stack: Stack) -> None:
         @stack.commands.register("deploy")
         def deploy(replicas: int = 1) -> None:
