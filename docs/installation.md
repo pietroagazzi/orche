@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.10 or later
+- Python 3.11 or later
 - Docker with the Compose plugin (`docker compose`)
 
 ## pip

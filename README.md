@@ -88,7 +88,7 @@ Full documentation is available [here](https://pietroagazzi.github.io/orche/):
 
 ## Requirements
 
-- Python >= 3.10
+- Python >= 3.11
 - Docker and Docker Compose installed on the system
 
 ## Development
