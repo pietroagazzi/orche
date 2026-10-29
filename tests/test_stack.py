@@ -101,6 +101,12 @@ class TestStackOn:
 
 
 class TestStackDelegation:
+    def test_wait_for_service_delegates_and_returns_self(self, stack: Stack) -> None:
+        assert stack.wait_for_service("db", timeout=12, interval=0.5) is stack
+        stack._docker.wait_for_service.assert_called_once_with(  # type: ignore[attr-defined]
+            "db", timeout=12, interval=0.5
+        )
+
     def test_build_delegates_to_docker(self, stack: Stack) -> None:
         stack.build()
         stack._docker.build.assert_called_once()  # type: ignore[attr-defined]

@@ -346,6 +346,31 @@ class Stack:
         self._docker.down(volumes=volumes)
         return self
 
+    def wait_for_service(
+        self, service: str, timeout: float = 60, interval: float = 1
+    ) -> "Stack":
+        """Wait for every container of a service to be running and healthy.
+
+        The service must define a healthcheck. Missing, starting and unhealthy
+        containers are polled until the timeout; exited or dead containers and
+        running containers without a healthcheck fail immediately.
+
+        Args:
+            service: Compose service name.
+            timeout: Maximum polling time in seconds (positive and finite).
+            interval: Delay between polls in seconds (positive and finite).
+
+        Returns:
+            Self for method chaining.
+
+        Raises:
+            ConfigError: If arguments are invalid.
+            DockerComposeError: If inspection fails, a container cannot become
+                healthy, or the timeout expires.
+        """
+        self._docker.wait_for_service(service, timeout=timeout, interval=interval)
+        return self
+
     def rm(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
         """Stop and remove service containers, keeping networks and volumes.
 

@@ -61,6 +61,13 @@ def test_up_waits_for_healthy_and_down_removes(real_stack: Stack) -> None:
     assert real_stack.client().ps() == []
 
 
+def test_wait_for_specific_service(real_stack: Stack) -> None:
+    real_stack.up(wait=False)
+    assert real_stack.wait_for_service("web", timeout=30, interval=0.2) is real_stack
+    with pytest.raises(DockerComposeError, match="without a healthcheck"):
+        real_stack.wait_for_service("worker", timeout=10, interval=0.2)
+
+
 def test_up_single_service(real_stack: Stack) -> None:
     real_stack.up(services=["worker"])
     assert _running_services(real_stack) == {"worker"}

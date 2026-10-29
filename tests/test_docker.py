@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -150,3 +151,68 @@ class TestDockerStop:
         )
         with pytest.raises(DockerComposeError, match="Failed to stop"):
             wrapper.stop()
+
+
+def _container(status: str, health: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        state=SimpleNamespace(
+            status=status,
+            running=status == "running",
+            health=SimpleNamespace(status=health) if health else None,
+            exit_code=1,
+        )
+    )
+
+
+class TestWaitForService:
+    def test_retries_until_all_replicas_are_healthy(
+        self, wrapper: DockerComposeWrapper, mocker: Any
+    ) -> None:
+        ps: Any = wrapper.compose.ps
+        ps.side_effect = [
+            [],
+            [_container("running", "healthy"), _container("running", "starting")],
+            [_container("running", "healthy"), _container("running", "unhealthy")],
+            [_container("running", "healthy"), _container("running", "healthy")],
+        ]
+        sleep = mocker.patch("orche.docker.time.sleep")
+        wrapper.wait_for_service("db", timeout=10, interval=0.1)
+        assert sleep.call_count == 3
+        ps.assert_called_with(services=["db"], all=True)
+
+    def test_timeout_limits_sleep_and_reports_missing_service(
+        self, wrapper: DockerComposeWrapper, mocker: Any
+    ) -> None:
+        wrapper.compose.ps.return_value = []  # type: ignore[attr-defined]
+        mocker.patch("orche.docker.time.monotonic", side_effect=[0, 0, 2])
+        sleep = mocker.patch("orche.docker.time.sleep")
+        with pytest.raises(DockerComposeError, match="Timed out.*no containers"):
+            wrapper.wait_for_service("db", timeout=2, interval=5)
+        sleep.assert_called_once_with(2)
+
+    @pytest.mark.parametrize("status", ["exited", "dead"])
+    def test_terminal_container_fails_immediately(
+        self, wrapper: DockerComposeWrapper, status: str
+    ) -> None:
+        wrapper.compose.ps.return_value = [_container(status)]  # type: ignore[attr-defined]
+        with pytest.raises(DockerComposeError, match=status):
+            wrapper.wait_for_service("db")
+
+    def test_missing_healthcheck_fails(self, wrapper: DockerComposeWrapper) -> None:
+        wrapper.compose.ps.return_value = [_container("running")]  # type: ignore[attr-defined]
+        with pytest.raises(DockerComposeError, match="without a healthcheck"):
+            wrapper.wait_for_service("db")
+
+    @pytest.mark.parametrize("timeout,interval", [(0, 1), (1, 0), (float("inf"), 1)])
+    def test_invalid_timing(
+        self, wrapper: DockerComposeWrapper, timeout: float, interval: float
+    ) -> None:
+        with pytest.raises(ConfigError):
+            wrapper.wait_for_service("db", timeout, interval)
+
+    def test_inspection_error_is_not_silenced(
+        self, wrapper: DockerComposeWrapper
+    ) -> None:
+        wrapper.compose.ps.side_effect = RuntimeError("daemon unavailable")  # type: ignore[attr-defined]
+        with pytest.raises(DockerComposeError, match="daemon unavailable"):
+            wrapper.wait_for_service("db")

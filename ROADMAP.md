@@ -11,12 +11,6 @@ container, pulling images or inspecting the resolved configuration still require
 dropping to `docker compose` or writing a custom command by hand. Orche already
 knows how to list running containers, but no command exposes it.
 
-## No way to wait for a specific service
-
-`up` can wait for all services to be running, but there is no way to wait for one
-service to be healthy, to set a timeout, or to retry. Orchefiles that need a
-database ready before running migrations have to implement their own polling.
-
 ## Hooks cannot react to failure
 
 Hooks run only before and after a successful command. There is nowhere to put

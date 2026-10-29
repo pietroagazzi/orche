@@ -1,6 +1,8 @@
 """Docker abstraction layer for docker-compose operations."""
 
+import math
 import shutil
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -198,3 +200,51 @@ class DockerComposeWrapper:
         except Exception as e:
             self.logger.debug("ps() failed: %s", e)
             return []
+
+    def wait_for_service(
+        self, service: str, timeout: float = 60, interval: float = 1
+    ) -> None:
+        """Wait until every container of a service is running and healthy."""
+        if not service.strip():
+            raise ConfigError("Service name cannot be empty")
+        for name, value in (("timeout", timeout), ("interval", interval)):
+            if not math.isfinite(value) or value <= 0:
+                raise ConfigError(f"{name} must be a positive finite number")
+
+        deadline = time.monotonic() + timeout
+        while True:
+            # Fetch fresh Container objects on every poll: their inspected state
+            # is cached by python-on-whales.
+            with _translate_errors("Failed to inspect service", "service inspection"):
+                containers = self.compose.ps(services=[service], all=True)
+                states = [container.state for container in containers]
+
+            for state in states:
+                if state.status in {"exited", "dead"}:
+                    raise DockerComposeError(
+                        f"Service '{service}' has a {state.status} container "
+                        f"(exit code {state.exit_code})"
+                    )
+                if state.status == "running" and state.health is None:
+                    raise DockerComposeError(
+                        f"Service '{service}' has a running container "
+                        "without a healthcheck"
+                    )
+            if states and all(
+                s.status == "running"
+                and s.health is not None
+                and s.health.status == "healthy"
+                for s in states
+            ):
+                return
+            reason = (
+                "not all containers are healthy" if states else "no containers found"
+            )
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DockerComposeError(
+                    f"Timed out waiting for service '{service}' to be healthy "
+                    f"after {timeout:g}s ({reason})"
+                )
+            time.sleep(min(interval, remaining))
