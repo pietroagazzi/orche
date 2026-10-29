@@ -1,6 +1,6 @@
 # Orche
 
-[![CI](https://github.com/pietroagazzi/orche/actions/workflows/ci.yml/badge.svg)](https://github.com/pietroagazzi/orche/actions/workflows/ci.yml)
+[![Test](https://github.com/pietroagazzi/orche/actions/workflows/test.yml/badge.svg)](https://github.com/pietroagazzi/orche/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/orche)](https://pypi.org/project/orche/)
 [![Python](https://img.shields.io/pypi/pyversions/orche)](https://pypi.org/project/orche/)
 [![License](https://img.shields.io/github/license/pietroagazzi/orche)](LICENSE)

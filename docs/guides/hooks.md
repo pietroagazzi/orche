@@ -77,3 +77,22 @@ def check_docker() -> None: ...
 @stack.commands.up.before
 def check_env() -> None: ...
 ```
+
+## Hooks and Command Options
+
+Hooks receive the options of the command they are attached to, but only the
+ones they declare as parameters. Values are the same resolved ones the handler
+gets, defaults included.
+
+```python
+@stack.commands.register("deploy")
+def deploy(env: str = "dev") -> None:
+    ...
+
+@stack.commands.register("deploy").before
+def announce(env: str) -> None:
+    print(f"Deploying to {env}")
+```
+
+See [Command Options](../cli-reference.md#command-options) for how options are
+parsed.

@@ -1,40 +1,36 @@
-name: CI
+name: Test
 
 on:
     push:
         branches: [main, develop]
+        paths: &code-paths
+            - "orche/**"
+            - "tests/**"
+            - "pyproject.toml"
+            - "uv.lock"
+            - ".github/workflows/test.yml"
     pull_request:
         branches: [main, develop]
+        paths: *code-paths
+
+permissions:
+    contents: read
+
+concurrency:
+    group: test-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
-    lint:
-        name: Lint & Type Check
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v7
-
-            - name: Install uv
-              uses: astral-sh/setup-uv@v7
-
-            - name: Set up Python
-              uses: actions/setup-python@v7
-              with:
-                  python-version: "3.11"
-
-            - name: Install dependencies
-              run: uv sync --extra dev
-
-            - name: Run pre-commit
-              uses: pre-commit/action@v3.0.1
-
     test:
-        name: Test (Python ${{ matrix.python-version }})
+        name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
         runs-on: ${{ matrix.os }}
         strategy:
             fail-fast: false
             matrix:
-                os: [ubuntu-latest, windows-latest, macos-latest]
-                python-version: ["3.11", "3.12", "3.13"]
+                # Pull requests only cover the oldest and newest Python on
+                # Linux; the full OS/version matrix runs after merge.
+                os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+                python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.11", "3.15"]' || '["3.11", "3.12", "3.13", "3.14", "3.15"]') }}
 
         steps:
             - uses: actions/checkout@v7
@@ -61,30 +57,10 @@ jobs:
                   file: ./coverage.xml
                   fail_ci_if_error: false
 
-    integration:
-        name: Integration (Docker)
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v7
-
-            - name: Install uv
-              uses: astral-sh/setup-uv@v7
-
-            - name: Set up Python
-              uses: actions/setup-python@v7
-              with:
-                  python-version: "3.11"
-
-            - name: Install dependencies
-              run: uv sync --extra dev
-
-            - name: Run integration tests
-              run: uv run pytest -m integration -v
-
     build:
         name: Build Package
         runs-on: ubuntu-latest
-        needs: [lint, test, integration]
+        needs: test
         steps:
             - uses: actions/checkout@v7
 

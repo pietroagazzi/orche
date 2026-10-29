@@ -4,7 +4,7 @@ import socket
 from collections.abc import Callable
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from rich.panel import Panel
 from rich.table import Table
@@ -12,6 +12,12 @@ from rich.table import Table
 from .docker import DockerComposeWrapper
 from .exceptions import CommandError, ConfigError, HookError
 from .logger import get_console, get_logger
+from .options import (
+    accepted_kwargs,
+    build_option_specs,
+    complete_options,
+    parse_tokens,
+)
 
 
 def _get_local_ip() -> str:
@@ -40,7 +46,7 @@ def _get_local_ip() -> str:
 
 BuiltinCommandType = Literal["up", "build", "down", "stop", "rm"]
 
-T = TypeVar("T", bound=Callable[[], None])
+T = TypeVar("T", bound=Callable[..., None])
 
 
 class CommandHandle(Generic[T]):
@@ -51,7 +57,14 @@ class CommandHandle(Generic[T]):
         self._registry = registry
 
     def __call__(self, func: T) -> T:
-        """Register func as the main handler (backward-compatible decorator)."""
+        """Register func as the main handler (backward-compatible decorator).
+
+        The parameters of ``func`` define the command-line options it accepts.
+
+        Raises:
+            ConfigError: If a parameter has an unsupported type or a reserved name.
+        """
+        build_option_specs(func)
         self._registry._commands[self._name] = func  # type: ignore[assignment]
         return func
 
@@ -80,9 +93,9 @@ class CommandRegistry(Generic[T]):
     """Registry for stack commands."""
 
     def __init__(self) -> None:
-        self._commands: dict[str, Callable[[], None]] = {}
-        self._before_hooks: dict[str, list[Callable[[], None]]] = {}
-        self._after_hooks: dict[str, list[Callable[[], None]]] = {}
+        self._commands: dict[str, Callable[..., None]] = {}
+        self._before_hooks: dict[str, list[Callable[..., None]]] = {}
+        self._after_hooks: dict[str, list[Callable[..., None]]] = {}
 
     def register(self, name: str) -> "CommandHandle[T]":
         """Decorator to register a command."""
@@ -113,7 +126,7 @@ class CommandRegistry(Generic[T]):
         """Decorator for the 'rm' command."""
         return self.register("rm")
 
-    def get(self, name: str) -> Callable[[], None] | None:
+    def get(self, name: str) -> Callable[..., None] | None:
         """Get a registered command handler."""
         return self._commands.get(name)
 
@@ -121,11 +134,15 @@ class CommandRegistry(Generic[T]):
         """Return list of registered command names."""
         return list(self._commands.keys())
 
-    def get_before_hooks(self, name: str) -> list[Callable[[], None]]:
+    def hook_commands(self) -> list[str]:
+        """Return command names that have at least one hook."""
+        return list(dict.fromkeys([*self._before_hooks, *self._after_hooks]))
+
+    def get_before_hooks(self, name: str) -> list[Callable[..., None]]:
         """Return before-hooks for the given command."""
         return self._before_hooks.get(name, [])
 
-    def get_after_hooks(self, name: str) -> list[Callable[[], None]]:
+    def get_after_hooks(self, name: str) -> list[Callable[..., None]]:
         """Return after-hooks for the given command."""
         return self._after_hooks.get(name, [])
 
@@ -139,6 +156,8 @@ class Stack:
         path: str | Path = ".",
         compose_files: list[str] | list[Path] | None = None,
         host: str | None = None,
+        profiles: list[str] | None = None,
+        env_files: list[str | Path] | None = None,
     ):
         """Initialize a Docker Compose stack.
 
@@ -153,9 +172,12 @@ class Stack:
             host: Host name or IP used to build the URLs in
                   ``print_services_summary``. When omitted, the local outbound
                   IPv4 address is detected, falling back to ``127.0.0.1``.
+            profiles: Compose profiles to enable for every operation.
+            env_files: Ordered Compose interpolation env files, relative to
+                the project path or absolute. Later files override earlier ones.
 
         Raises:
-            ConfigError: If compose_files is empty or files do not exist
+            ConfigError: If compose_files is empty or a specified file is missing
         """
         self.project_path: Path = Path(path).resolve()
         self.project_name = name
@@ -186,15 +208,29 @@ class Stack:
                 f"Please ensure the file(s) exist or provide the correct path(s)."
             )
 
+        self.profiles = list(profiles or [])
+        self.env_files = [
+            (p if p.is_absolute() else self.project_path / p).resolve()
+            for p in (Path(item) for item in (env_files or []))
+        ]
+        missing_env_files = [p for p in self.env_files if not p.is_file()]
+        if missing_env_files:
+            files_str = "\n  ".join(str(p) for p in missing_env_files)
+            raise ConfigError(
+                f"Environment file(s) not found or not files:\n  {files_str}"
+            )
+
         # Initialize Docker wrapper
         self._docker = DockerComposeWrapper(
             compose_files=self.compose_files,
             project_name=self.project_name,
             project_path=self.project_path,
+            profiles=self.profiles,
+            env_files=self.env_files,
         )
 
         # Command registry
-        self.commands: CommandRegistry[Callable[[], None]] = CommandRegistry()
+        self.commands: CommandRegistry[Callable[..., None]] = CommandRegistry()
 
         # Scoped to run() and isolated per thread/task, so concurrent or nested
         # runs on the same Stack never see each other's services.
@@ -310,6 +346,31 @@ class Stack:
         self._docker.down(volumes=volumes)
         return self
 
+    def wait_for_service(
+        self, service: str, timeout: float = 60, interval: float = 1
+    ) -> "Stack":
+        """Wait for every container of a service to be running and healthy.
+
+        The service must define a healthcheck. Missing, starting and unhealthy
+        containers are polled until the timeout; exited or dead containers and
+        running containers without a healthcheck fail immediately.
+
+        Args:
+            service: Compose service name.
+            timeout: Maximum polling time in seconds (positive and finite).
+            interval: Delay between polls in seconds (positive and finite).
+
+        Returns:
+            Self for method chaining.
+
+        Raises:
+            ConfigError: If arguments are invalid.
+            DockerComposeError: If inspection fails, a container cannot become
+                healthy, or the timeout expires.
+        """
+        self._docker.wait_for_service(service, timeout=timeout, interval=interval)
+        return self
+
     def rm(self, services: list[str] | None = None, volumes: bool = False) -> "Stack":
         """Stop and remove service containers, keeping networks and volumes.
 
@@ -339,7 +400,34 @@ class Stack:
         self._docker.stop(services=target_services)
         return self
 
-    def run(self, command: str, services: list[str] | None = None) -> None:
+    def parse_args(
+        self, command: str, tokens: list[str]
+    ) -> tuple[list[str], dict[str, Any]]:
+        """Split command-line tokens into service names and handler options.
+
+        Options are the parameters of the command handler, so the handler's
+        signature decides which tokens are option values and which are services.
+
+        Args:
+            command: Command name the tokens belong to.
+            tokens: Everything that followed the command name.
+
+        Returns:
+            The service names and the resolved option values, defaults included.
+
+        Raises:
+            CommandError: If the command is unknown or the options are invalid.
+        """
+        specs = build_option_specs(self._get_handler(command))
+        services, given = parse_tokens(command, specs, tokens)
+        return services, complete_options(command, specs, given)
+
+    def run(
+        self,
+        command: str,
+        services: list[str] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> None:
         """Execute a command with before/after hooks.
 
         Execution order:
@@ -350,21 +438,26 @@ class Stack:
             3. After-hooks run sequentially. First failure raises
                ``HookError`` and aborts (remaining after-hooks are skipped).
 
+        Hooks receive only the options they declare as parameters.
+
         Args:
             command: Command name to execute.
             services: List of service names.
+            options: Option values for the handler, keyed by parameter name.
+                Omitted options take the handler's defaults.
 
         Raises:
-            CommandError: If the command is not registered or the handler fails.
+            CommandError: If the command is not registered, the options are
+                invalid, or the handler fails.
             HookError: If a before- or after-hook fails.
         """
         token = self._active_services_var.set(list(services or []))
         try:
-            self._execute(command)
+            self._execute(command, options or {})
         finally:
             self._active_services_var.reset(token)
 
-    def _execute(self, command: str) -> None:
+    def _get_handler(self, command: str) -> Callable[..., None]:
         handler = self.commands.get(command)
         if not handler:
             available = self.commands.available_commands()
@@ -374,22 +467,32 @@ class Stack:
                 else " No commands registered — did you forget @stack.commands.up?"
             )
             raise CommandError(f"Unknown command '{command}'.{hint}")
+        return handler
+
+    def _execute(self, command: str, options: dict[str, Any]) -> None:
+        handler = self._get_handler(command)
+        resolved = complete_options(command, build_option_specs(handler), options)
 
         for hook in self.commands.get_before_hooks(command):
-            self._run_hook("before", command, hook)
+            self._run_hook("before", command, hook, resolved)
 
         try:
-            handler()
+            handler(**resolved)
         except Exception as e:
             raise CommandError(f"Command '{command}' failed: {e}") from e
 
         for hook in self.commands.get_after_hooks(command):
-            self._run_hook("after", command, hook)
+            self._run_hook("after", command, hook, resolved)
 
     @staticmethod
-    def _run_hook(hook_type: str, command: str, hook: Callable[[], None]) -> None:
+    def _run_hook(
+        hook_type: str,
+        command: str,
+        hook: Callable[..., None],
+        options: dict[str, Any],
+    ) -> None:
         try:
-            hook()
+            hook(**accepted_kwargs(hook, options))
         except Exception as e:
             raise HookError(hook_type, command, e) from e
 

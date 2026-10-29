@@ -1,6 +1,8 @@
 """Docker abstraction layer for docker-compose operations."""
 
+import math
 import shutil
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -35,6 +37,8 @@ class DockerComposeWrapper:
         compose_files: Sequence[str | Path],
         project_name: str | None = None,
         project_path: Path | None = None,
+        profiles: Sequence[str] | None = None,
+        env_files: Sequence[str | Path] | None = None,
     ):
         """Initialize Docker Compose wrapper.
 
@@ -43,6 +47,8 @@ class DockerComposeWrapper:
                           Files are merged in order. Cannot be empty.
             project_name: Optional project name (defaults to directory name)
             project_path: Optional project path
+            profiles: Compose profiles to enable
+            env_files: Ordered Compose interpolation env files
 
         Raises:
             ConfigError: If compose_files is empty
@@ -68,6 +74,8 @@ class DockerComposeWrapper:
             compose_files=[str(cf) for cf in self.compose_files],
             compose_project_name=project_name,
             compose_project_directory=str(self.project_path),
+            compose_profiles=list(profiles or []),
+            compose_env_files=[str(p) for p in (env_files or [])],
         ).compose
 
         self.logger = get_logger("orche.docker")
@@ -192,3 +200,51 @@ class DockerComposeWrapper:
         except Exception as e:
             self.logger.debug("ps() failed: %s", e)
             return []
+
+    def wait_for_service(
+        self, service: str, timeout: float = 60, interval: float = 1
+    ) -> None:
+        """Wait until every container of a service is running and healthy."""
+        if not service.strip():
+            raise ConfigError("Service name cannot be empty")
+        for name, value in (("timeout", timeout), ("interval", interval)):
+            if not math.isfinite(value) or value <= 0:
+                raise ConfigError(f"{name} must be a positive finite number")
+
+        deadline = time.monotonic() + timeout
+        while True:
+            # Fetch fresh Container objects on every poll: their inspected state
+            # is cached by python-on-whales.
+            with _translate_errors("Failed to inspect service", "service inspection"):
+                containers = self.compose.ps(services=[service], all=True)
+                states = [container.state for container in containers]
+
+            for state in states:
+                if state.status in {"exited", "dead"}:
+                    raise DockerComposeError(
+                        f"Service '{service}' has a {state.status} container "
+                        f"(exit code {state.exit_code})"
+                    )
+                if state.status == "running" and state.health is None:
+                    raise DockerComposeError(
+                        f"Service '{service}' has a running container "
+                        "without a healthcheck"
+                    )
+            if states and all(
+                s.status == "running"
+                and s.health is not None
+                and s.health.status == "healthy"
+                for s in states
+            ):
+                return
+            reason = (
+                "not all containers are healthy" if states else "no containers found"
+            )
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DockerComposeError(
+                    f"Timed out waiting for service '{service}' to be healthy "
+                    f"after {timeout:g}s ({reason})"
+                )
+            time.sleep(min(interval, remaining))

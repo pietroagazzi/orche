@@ -1,6 +1,7 @@
 """Command-line interface for Orche."""
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from rich.console import Console
 from orche import __version__
 from orche.exceptions import CommandError, OrcheError, OrchefileError
 from orche.logger import setup_logger
+from orche.options import build_option_specs
 from orche.stack import Stack
 
 
@@ -107,10 +109,11 @@ def import_orchefile(orchefile_path: Path) -> Stack:
                 sys.path.remove(str(orchefile_dir))
 
 
-def _parse_chained(
-    command: str, services: tuple[str, ...]
-) -> list[tuple[str, list[str]]]:
-    """Split a flat token list into chained (command, services) pairs.
+def _parse_chained(command: str, args: tuple[str, ...]) -> list[tuple[str, list[str]]]:
+    """Split a flat token list into chained (command, args) pairs.
+
+    The args of each pair are the raw tokens that followed the command; the
+    stack later splits them into services and options.
 
     Commas act as separators between invocations, either standalone (`` , ``)
     or attached to the preceding token (``build,``).
@@ -134,7 +137,7 @@ def _parse_chained(
         _parse_chained(",", (",",))
         # → []  all tokens are commas, nothing to run
     """
-    tokens = [command, *services]
+    tokens = [command, *args]
     groups: list[list[str]] = []
     current: list[str] = []
 
@@ -155,15 +158,85 @@ def _parse_chained(
     return [(g[0], g[1:]) for g in groups if g]
 
 
+# Click swallows the first "--" it sees, but the stack's own option parser needs
+# it to know where options end. Everything from the marker on is withheld from
+# Click, so global flags after it stay plain tokens, and re-attached in main().
+_TAIL_KEY = "orche.after_end_of_options"
+
+
+class _OrcheCommand(click.Command):
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Click's eager help callback runs before --file is stored in ctx.params.
+        # Parse the options first so help can inspect the selected orchefile.
+        before_marker = args[: args.index("--")] if "--" in args else args
+        if "--help" in before_marker and not ctx.resilient_parsing:
+            opts, _, _ = self.make_parser(ctx).parse_args(args=before_marker)
+            file = Path(opts.get("file", "orchefile.py"))
+            click.echo(self.get_help(ctx))
+            if file == Path("orchefile.py") and not file.exists():
+                ctx.exit()
+            try:
+                stack = import_orchefile(find_or_validate_orchefile(file))
+            except OrcheError as e:
+                raise click.ClickException(str(e)) from e
+            _print_project_help(stack)
+            ctx.exit()
+        if "--" in args:
+            marker = args.index("--")
+            ctx.meta[_TAIL_KEY] = args[marker + 1 :]
+            args = args[:marker]
+        remaining: list[str] = super().parse_args(ctx, args)
+        return remaining
+
+
+def _print_project_help(stack: Stack) -> None:
+    """Show registered handlers and hooks without running them."""
+    names = stack.commands.available_commands()
+    click.echo("\nProject commands:")
+    hook_only = [name for name in stack.commands.hook_commands() if name not in names]
+    if not names and not hook_only:
+        click.echo("  No commands registered.")
+        return
+    for name in names:
+        handler = stack.commands.get(name)
+        assert handler is not None
+        doc = inspect.getdoc(handler)
+        click.echo(f"  {name}" + (f"  {doc.splitlines()[0]}" if doc else ""))
+        for spec in build_option_specs(handler).values():
+            flag = f"--{spec.flag}"
+            if spec.type is bool:
+                flag += f" / --no-{spec.flag}"
+            else:
+                flag += f" {spec.type.__name__.upper()}"
+            details = []
+            if spec.required:
+                details.append("required")
+            else:
+                details.append(f"default: {spec.default!r}")
+            if spec.multiple:
+                details.append("repeatable")
+            click.echo(f"    {flag} ({', '.join(details)})")
+        before = len(stack.commands.get_before_hooks(name))
+        after = len(stack.commands.get_after_hooks(name))
+        if before or after:
+            click.echo(f"    Hooks: {before} before, {after} after")
+    for name in hook_only:
+        before = len(stack.commands.get_before_hooks(name))
+        after = len(stack.commands.get_after_hooks(name))
+        click.echo(f"  {name} (no handler; {before} before, {after} after)")
+
+
 @click.command(
+    cls=_OrcheCommand,
+    context_settings={"ignore_unknown_options": True},
     epilog=(
-        "Built-in commands: up, build, down, stop, rm. "
-        "Custom commands defined in orchefile.py. "
-        "Chain multiple commands with commas: orche build, up web."
-    )
+        "Commands are defined in orchefile.py. "
+        "Chain multiple commands with commas: orche build, up web. "
+        "Options after a command are defined by its handler: orche deploy --env prod."
+    ),
 )
 @click.argument("command")
-@click.argument("services", nargs=-1)
+@click.argument("args", nargs=-1, metavar="[SERVICES_AND_OPTIONS]...")
 @click.option(
     "-f",
     "--file",
@@ -173,7 +246,7 @@ def _parse_chained(
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 @click.version_option(version=__version__, prog_name="orche")
-def main(command: str, services: tuple[str, ...], file: Path, debug: bool) -> None:
+def main(command: str, args: tuple[str, ...], file: Path, debug: bool) -> None:
     """Orche - Docker Compose Stack Orchestrator
 
     Execute commands defined in your orchefile.py with Docker Compose.
@@ -193,33 +266,40 @@ def main(command: str, services: tuple[str, ...], file: Path, debug: bool) -> No
             error_console.print_exception()
         sys.exit(1)
 
-    # Execute each chained invocation sequentially; stop on first failure
-    invocations = _parse_chained(command, services)
+    tail = click.get_current_context().meta.get(_TAIL_KEY)
+    if tail is not None:
+        args = (*args, "--", *tail)
+    invocations = _parse_chained(command, args)
     if not invocations:
         error_console.print(
             "[yellow]Warning: no commands to run — all tokens were commas. "
             "Did you mean to chain commands, e.g. `orche build, up`?[/yellow]"
         )
         sys.exit(1)
-    for cmd, svcs in invocations:
-        try:
-            stack.run(command=cmd, services=svcs)
-        except CommandError as e:
-            error_console.print(f"[red]Error: {e}[/red]")
-            sys.exit(1)
-        except OrcheError as e:
-            error_console.print(f"[red]Error: {e}[/red]")
-            if debug:
-                error_console.print_exception()
-            sys.exit(1)
-        except KeyboardInterrupt:
-            error_console.print("\n[yellow]Interrupted by user[/yellow]")
-            sys.exit(130)
-        except Exception as e:
-            error_console.print(f"[red]Unexpected error: {e}[/red]")
-            if debug:
-                error_console.print_exception()
-            sys.exit(1)
+
+    # Parse every invocation before running any, so a typo in a later option
+    # does not surface only after earlier commands have already run.
+    # Execute sequentially; stop on first failure.
+    try:
+        parsed = [(cmd, *stack.parse_args(cmd, tokens)) for cmd, tokens in invocations]
+        for cmd, services, options in parsed:
+            stack.run(command=cmd, services=services, options=options)
+    except CommandError as e:
+        error_console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+    except OrcheError as e:
+        error_console.print(f"[red]Error: {e}[/red]")
+        if debug:
+            error_console.print_exception()
+        sys.exit(1)
+    except KeyboardInterrupt:
+        error_console.print("\n[yellow]Interrupted by user[/yellow]")
+        sys.exit(130)
+    except Exception as e:
+        error_console.print(f"[red]Unexpected error: {e}[/red]")
+        if debug:
+            error_console.print_exception()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

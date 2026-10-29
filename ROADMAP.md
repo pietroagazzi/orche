@@ -5,37 +5,11 @@ not a commitment.
 
 ## Built-in commands are too few
 
-Only `up`, `build`, `down` and `stop` exist. Everyday operations such as
+Only `up`, `build`, `down`, `stop` and `rm` exist. Everyday operations such as
 following logs, checking status, restarting a service, running a command in a
 container, pulling images or inspecting the resolved configuration still require
 dropping to `docker compose` or writing a custom command by hand. Orche already
 knows how to list running containers, but no command exposes it.
-
-## Custom commands cannot take arguments or options
-
-Every token after a command name is interpreted as a service name, and handlers
-receive no parameters. Something like `orche deploy --env prod` cannot be
-expressed, so any command that needs input has to read environment variables or
-be hard-coded.
-
-## Commands defined in the orchefile are not discoverable
-
-`orche --help` lists the built-in commands only. A user has to open the
-orchefile to find out which commands and hooks a project defines, and there is no
-way to see a short description for each one.
-
-## No way to wait for a specific service
-
-`up` can wait for all services to be running, but there is no way to wait for one
-service to be healthy, to set a timeout, or to retry. Orchefiles that need a
-database ready before running migrations have to implement their own polling.
-
-## Profiles, env files and per-environment setup are not first-class
-
-Compose profiles and env files cannot be set on a `Stack`, and there is no
-supported pattern for switching between environments such as dev and prod beyond
-passing different compose files. This is one of the most common reasons to use a
-tool like Orche in the first place.
 
 ## Hooks cannot react to failure
 
