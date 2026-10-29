@@ -17,13 +17,6 @@ knows how to list running containers, but no command exposes it.
 service to be healthy, to set a timeout, or to retry. Orchefiles that need a
 database ready before running migrations have to implement their own polling.
 
-## Profiles, env files and per-environment setup are not first-class
-
-Compose profiles and env files cannot be set on a `Stack`, and there is no
-supported pattern for switching between environments such as dev and prod beyond
-passing different compose files. This is one of the most common reasons to use a
-tool like Orche in the first place.
-
 ## Hooks cannot react to failure
 
 Hooks run only before and after a successful command. There is nowhere to put

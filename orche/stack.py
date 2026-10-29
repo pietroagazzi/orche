@@ -156,6 +156,8 @@ class Stack:
         path: str | Path = ".",
         compose_files: list[str] | list[Path] | None = None,
         host: str | None = None,
+        profiles: list[str] | None = None,
+        env_files: list[str | Path] | None = None,
     ):
         """Initialize a Docker Compose stack.
 
@@ -170,9 +172,12 @@ class Stack:
             host: Host name or IP used to build the URLs in
                   ``print_services_summary``. When omitted, the local outbound
                   IPv4 address is detected, falling back to ``127.0.0.1``.
+            profiles: Compose profiles to enable for every operation.
+            env_files: Ordered Compose interpolation env files, relative to
+                the project path or absolute. Later files override earlier ones.
 
         Raises:
-            ConfigError: If compose_files is empty or files do not exist
+            ConfigError: If compose_files is empty or a specified file is missing
         """
         self.project_path: Path = Path(path).resolve()
         self.project_name = name
@@ -203,11 +208,25 @@ class Stack:
                 f"Please ensure the file(s) exist or provide the correct path(s)."
             )
 
+        self.profiles = list(profiles or [])
+        self.env_files = [
+            (p if p.is_absolute() else self.project_path / p).resolve()
+            for p in (Path(item) for item in (env_files or []))
+        ]
+        missing_env_files = [p for p in self.env_files if not p.is_file()]
+        if missing_env_files:
+            files_str = "\n  ".join(str(p) for p in missing_env_files)
+            raise ConfigError(
+                f"Environment file(s) not found or not files:\n  {files_str}"
+            )
+
         # Initialize Docker wrapper
         self._docker = DockerComposeWrapper(
             compose_files=self.compose_files,
             project_name=self.project_name,
             project_path=self.project_path,
+            profiles=self.profiles,
+            env_files=self.env_files,
         )
 
         # Command registry

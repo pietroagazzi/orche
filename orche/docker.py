@@ -35,6 +35,8 @@ class DockerComposeWrapper:
         compose_files: Sequence[str | Path],
         project_name: str | None = None,
         project_path: Path | None = None,
+        profiles: Sequence[str] | None = None,
+        env_files: Sequence[str | Path] | None = None,
     ):
         """Initialize Docker Compose wrapper.
 
@@ -43,6 +45,8 @@ class DockerComposeWrapper:
                           Files are merged in order. Cannot be empty.
             project_name: Optional project name (defaults to directory name)
             project_path: Optional project path
+            profiles: Compose profiles to enable
+            env_files: Ordered Compose interpolation env files
 
         Raises:
             ConfigError: If compose_files is empty
@@ -68,6 +72,8 @@ class DockerComposeWrapper:
             compose_files=[str(cf) for cf in self.compose_files],
             compose_project_name=project_name,
             compose_project_directory=str(self.project_path),
+            compose_profiles=list(profiles or []),
+            compose_env_files=[str(p) for p in (env_files or [])],
         ).compose
 
         self.logger = get_logger("orche.docker")

@@ -50,6 +50,30 @@ class TestStackInit:
         s = make_stack()
         assert s.project_path.is_absolute()
 
+    def test_profiles_and_env_files_are_passed_to_wrapper(
+        self, tmp_path: Any, mocker: Any
+    ) -> None:
+        (tmp_path / "docker-compose.yml").write_text("services: {}")
+        first = tmp_path / ".env"
+        second = tmp_path / "override.env"
+        first.write_text("A=1")
+        second.write_text("A=2")
+        wrapper = mocker.patch("orche.stack.DockerComposeWrapper")
+        profiles = ["debug"]
+        stack = Stack(path=tmp_path, profiles=profiles, env_files=[".env", second])
+        profiles.append("other")
+        assert stack.profiles == ["debug"]
+        assert stack.env_files == [first.resolve(), second.resolve()]
+        assert wrapper.call_args.kwargs["profiles"] == ["debug"]
+        assert wrapper.call_args.kwargs["env_files"] == stack.env_files
+
+    def test_missing_env_file_is_rejected(self, tmp_path: Any, mocker: Any) -> None:
+        (tmp_path / "docker-compose.yml").write_text("services: {}")
+        wrapper = mocker.patch("orche.stack.DockerComposeWrapper")
+        with pytest.raises(ConfigError, match="missing.env"):
+            Stack(path=tmp_path, env_files=["missing.env"])
+        wrapper.assert_not_called()
+
 
 class TestStackOn:
     def test_no_active_services_returns_true(self, stack: Stack) -> None:

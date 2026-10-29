@@ -48,6 +48,23 @@ class TestDockerInit:
         DockerComposeWrapper(compose_files=[compose_file])
         mock_client.assert_called_once()
 
+    def test_passes_profiles_and_ordered_env_files(
+        self, tmp_path: Path, mocker: Any
+    ) -> None:
+        mocker.patch("shutil.which", return_value="/usr/bin/docker")
+        client = mocker.patch("orche.docker.DockerClient")
+        DockerComposeWrapper(
+            compose_files=[tmp_path / "compose.yml"],
+            project_path=tmp_path,
+            profiles=["debug", "tools"],
+            env_files=[tmp_path / ".env", tmp_path / "override.env"],
+        )
+        assert client.call_args.kwargs["compose_profiles"] == ["debug", "tools"]
+        assert client.call_args.kwargs["compose_env_files"] == [
+            str(tmp_path / ".env"),
+            str(tmp_path / "override.env"),
+        ]
+
 
 class TestDockerBuild:
     def test_build_calls_compose(self, wrapper: DockerComposeWrapper) -> None:

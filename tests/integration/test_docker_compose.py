@@ -26,6 +26,33 @@ def _running_services(stack: Stack) -> set[str]:
     }
 
 
+def test_profiles_and_env_files_in_compose_config(
+    project_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("ORCHE_TEST_IMAGE", raising=False)
+    (project_dir / "docker-compose.yml").write_text(
+        "services:\n  app:\n    image: ${ORCHE_TEST_IMAGE}\n    profiles: [tools]\n"
+    )
+    (project_dir / "base.env").write_text("ORCHE_TEST_IMAGE=busybox:1.35\n")
+    (project_dir / "override.env").write_text("ORCHE_TEST_IMAGE=busybox:1.36\n")
+    stack = Stack(
+        path=project_dir, profiles=["tools"], env_files=["base.env", "override.env"]
+    )
+    config = stack.client().compose.config(return_json=True)
+    assert isinstance(config, dict)
+    assert config["services"]["app"]["image"] == "busybox:1.36"
+
+    monkeypatch.setenv("ORCHE_TEST_IMAGE", "busybox:latest")
+    config = stack.client().compose.config(return_json=True)
+    assert isinstance(config, dict)
+    assert config["services"]["app"]["image"] == "busybox:latest"
+
+    without_profile = Stack(path=project_dir, env_files=["base.env", "override.env"])
+    config = without_profile.client().compose.config(return_json=True)
+    assert isinstance(config, dict)
+    assert not config.get("services")
+
+
 def test_up_waits_for_healthy_and_down_removes(real_stack: Stack) -> None:
     real_stack.up()
     assert _running_services(real_stack) == {"web", "worker"}
