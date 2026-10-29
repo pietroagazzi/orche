@@ -10,7 +10,7 @@ orche [OPTIONS] COMMAND[,] [SERVICES]... [--OPTION [VALUE]]... [, COMMAND ...]..
 
 | Argument   | Description                                                                   |
 | ---------- | ----------------------------------------------------------------------------- |
-| `COMMAND`  | Command to run (built-in or custom). Built-ins: `up`, `build`, `down`, `stop`, `rm` |
+| `COMMAND`  | Command registered in the orchefile |
 | `SERVICES` | Optional list of service names to target (space-separated)                    |
 
 ## Options
@@ -21,6 +21,14 @@ orche [OPTIONS] COMMAND[,] [SERVICES]... [--OPTION [VALUE]]... [, COMMAND ...]..
 | `--debug`         | Enable debug logging                        |
 | `--version`       | Show version and exit                       |
 | `--help`          | Show help and exit                          |
+
+`orche --help` also lists commands registered in the selected orchefile, their
+first docstring line, options and hook counts. Hooks without a registered handler
+are listed separately. Use `orche -f path/to/orchefile.py --help` to inspect a
+different file. If the default file is absent, general help is still available.
+Inspecting a project imports and executes its orchefile, just as running a command
+does; its initialization requirements (including Docker) therefore apply.
+Command handlers and hooks themselves are not run by help.
 
 ## Command Options
 

@@ -5,17 +5,11 @@ not a commitment.
 
 ## Built-in commands are too few
 
-Only `up`, `build`, `down` and `stop` exist. Everyday operations such as
+Only `up`, `build`, `down`, `stop` and `rm` exist. Everyday operations such as
 following logs, checking status, restarting a service, running a command in a
 container, pulling images or inspecting the resolved configuration still require
 dropping to `docker compose` or writing a custom command by hand. Orche already
 knows how to list running containers, but no command exposes it.
-
-## Commands defined in the orchefile are not discoverable
-
-`orche --help` lists the built-in commands only. A user has to open the
-orchefile to find out which commands and hooks a project defines, and there is no
-way to see a short description for each one.
 
 ## No way to wait for a specific service
 

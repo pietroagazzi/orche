@@ -134,6 +134,10 @@ class CommandRegistry(Generic[T]):
         """Return list of registered command names."""
         return list(self._commands.keys())
 
+    def hook_commands(self) -> list[str]:
+        """Return command names that have at least one hook."""
+        return list(dict.fromkeys([*self._before_hooks, *self._after_hooks]))
+
     def get_before_hooks(self, name: str) -> list[Callable[..., None]]:
         """Return before-hooks for the given command."""
         return self._before_hooks.get(name, [])

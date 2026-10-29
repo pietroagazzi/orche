@@ -1,6 +1,7 @@
 """Command-line interface for Orche."""
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from rich.console import Console
 from orche import __version__
 from orche.exceptions import CommandError, OrcheError, OrchefileError
 from orche.logger import setup_logger
+from orche.options import build_option_specs
 from orche.stack import Stack
 
 
@@ -164,6 +166,21 @@ _TAIL_KEY = "orche.after_end_of_options"
 
 class _OrcheCommand(click.Command):
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Click's eager help callback runs before --file is stored in ctx.params.
+        # Parse the options first so help can inspect the selected orchefile.
+        before_marker = args[: args.index("--")] if "--" in args else args
+        if "--help" in before_marker and not ctx.resilient_parsing:
+            opts, _, _ = self.make_parser(ctx).parse_args(args=before_marker)
+            file = Path(opts.get("file", "orchefile.py"))
+            click.echo(self.get_help(ctx))
+            if file == Path("orchefile.py") and not file.exists():
+                ctx.exit()
+            try:
+                stack = import_orchefile(find_or_validate_orchefile(file))
+            except OrcheError as e:
+                raise click.ClickException(str(e)) from e
+            _print_project_help(stack)
+            ctx.exit()
         if "--" in args:
             marker = args.index("--")
             ctx.meta[_TAIL_KEY] = args[marker + 1 :]
@@ -172,12 +189,48 @@ class _OrcheCommand(click.Command):
         return remaining
 
 
+def _print_project_help(stack: Stack) -> None:
+    """Show registered handlers and hooks without running them."""
+    names = stack.commands.available_commands()
+    click.echo("\nProject commands:")
+    hook_only = [name for name in stack.commands.hook_commands() if name not in names]
+    if not names and not hook_only:
+        click.echo("  No commands registered.")
+        return
+    for name in names:
+        handler = stack.commands.get(name)
+        assert handler is not None
+        doc = inspect.getdoc(handler)
+        click.echo(f"  {name}" + (f"  {doc.splitlines()[0]}" if doc else ""))
+        for spec in build_option_specs(handler).values():
+            flag = f"--{spec.flag}"
+            if spec.type is bool:
+                flag += f" / --no-{spec.flag}"
+            else:
+                flag += f" {spec.type.__name__.upper()}"
+            details = []
+            if spec.required:
+                details.append("required")
+            else:
+                details.append(f"default: {spec.default!r}")
+            if spec.multiple:
+                details.append("repeatable")
+            click.echo(f"    {flag} ({', '.join(details)})")
+        before = len(stack.commands.get_before_hooks(name))
+        after = len(stack.commands.get_after_hooks(name))
+        if before or after:
+            click.echo(f"    Hooks: {before} before, {after} after")
+    for name in hook_only:
+        before = len(stack.commands.get_before_hooks(name))
+        after = len(stack.commands.get_after_hooks(name))
+        click.echo(f"  {name} (no handler; {before} before, {after} after)")
+
+
 @click.command(
     cls=_OrcheCommand,
     context_settings={"ignore_unknown_options": True},
     epilog=(
-        "Built-in commands: up, build, down, stop, rm. "
-        "Custom commands defined in orchefile.py. "
+        "Commands are defined in orchefile.py. "
         "Chain multiple commands with commas: orche build, up web. "
         "Options after a command are defined by its handler: orche deploy --env prod."
     ),

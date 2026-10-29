@@ -30,6 +30,61 @@ class TestMainCommand:
         assert result.exit_code == 0
         assert "orche" in result.output
 
+    def test_help_lists_project_commands_without_running_them(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: Any, mocker: Any
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "docker-compose.yml").write_text("services: {}\n")
+        (tmp_path / "custom.py").write_text('''
+from orche import Stack
+stack = Stack()
+@stack.commands.register("deploy")
+def deploy(env: str, dry_run: bool = False, tag: list[str] = []):
+    """Deploy the application.\n\nMore details."""
+    raise RuntimeError("handler ran")
+@stack.commands.register("deploy").before
+def prepare():
+    raise RuntimeError("hook ran")
+@stack.commands.register("missing").after
+def cleanup():
+    pass
+''')
+        mocker.patch("orche.docker.shutil.which", return_value="/usr/bin/docker")
+        mocker.patch("orche.docker.DockerClient")
+
+        result = runner.invoke(main, ["--help", "-f", "custom.py"])
+        assert result.exit_code == 0, result.output
+        assert "deploy  Deploy the application." in result.output
+        assert "--env STR (required)" in result.output
+        assert "--dry-run / --no-dry-run (default: False)" in result.output
+        assert "--tag STR (default: [], repeatable)" in result.output
+        assert "Hooks: 1 before, 0 after" in result.output
+        assert "missing (no handler; 0 before, 1 after)" in result.output
+
+    def test_help_without_default_orchefile(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(main, ["--help"])
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
+
+    def test_help_reports_invalid_selected_file(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        result = runner.invoke(main, ["-f", str(tmp_path / "missing.py"), "--help"])
+        assert result.exit_code == 1
+        assert "File not found" in result.output
+
+    def test_help_reports_orchefile_import_failure(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "orchefile.py").write_text('raise RuntimeError("broken setup")')
+        result = runner.invoke(main, ["--help"])
+        assert result.exit_code == 1
+        assert "broken setup" in result.output
+
     def test_orchefile_not_found_exits_1(self, runner: CliRunner, mocker: Any) -> None:
         mocker.patch(
             "orche.cli.find_or_validate_orchefile",
